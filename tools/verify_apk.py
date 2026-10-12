@@ -1,5 +1,5 @@
 import hashlib,json,os,pathlib,re,subprocess,zipfile,xml.etree.ElementTree as ET
-p=pathlib.Path('build/SHADDA-Quest-AR-v0.1.0.apk')
+p=pathlib.Path('build/SHADDA-Quest-AR-v0.2.0.apk')
 sdk=pathlib.Path(os.environ['ANDROID_HOME'])
 analyzer=sdk/'cmdline-tools/latest/bin/apkanalyzer'
 xml=subprocess.check_output([str(analyzer),'manifest','print',str(p)],text=True)
@@ -15,6 +15,7 @@ features={f.get(a+'name'):f for f in r.findall('uses-feature')}
 assert features['android.hardware.vr.headtracking'].get(a+'required')=='true'
 assert features['com.oculus.feature.PASSTHROUGH'].get(a+'required')=='true'
 permissions=[m.get(a+'name') for m in r.findall('uses-permission')]
+assert 'com.oculus.permission.USE_SCENE' in permissions, permissions
 assert 'android.permission.RECORD_AUDIO' not in permissions
 assert 'android.permission.CAMERA' not in permissions
 with zipfile.ZipFile(p) as z:

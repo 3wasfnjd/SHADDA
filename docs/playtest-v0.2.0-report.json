@@ -1,0 +1,20 @@
+{
+  "apk_built": true,
+  "package_verified": true,
+  "device_installed": false,
+  "quest_gameplay_tested": false,
+  "bytes": 110261101,
+  "sha256": "9e2683050f322ce6b5fcb3f936611f5a7af8642ac9b573622a79ca6995328d83",
+  "certificate_sha256": "1bf00b815f418f8326a2c8f681ea186e8c147a1fccf621edc295798c8a486404",
+  "signing": "development",
+  "target_sdk": 34,
+  "abis": [
+    "arm64-v8a"
+  ],
+  "source_commit": "f3712bc7742147c11a73927ba43d77a8e6fdfd56",
+  "actions_run": 38323611915,
+  "headless_checks": 52,
+  "draw_calls_desktop_peak": 296,
+  "visual_review": "Arabic studio logo and approved gameplay models visually reviewed in exported CI previews; stereo and passthrough device validation still pending",
+  "known_import_messages": "Six solid-colour source primitives have no UV for generated tangents; Godot reported this during import. No SCRIPT ERROR in CI. Headless test teardown reports two resources retained until exit."
+}

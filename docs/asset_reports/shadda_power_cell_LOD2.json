@@ -1,0 +1,224 @@
+{
+  "level": 2,
+  "bytes": 3294564,
+  "triangles": 7800,
+  "primitives": 26,
+  "nodes": 31,
+  "materials": 10,
+  "skins": 0,
+  "bounds": {
+    "min": [
+      -0.03416621871055292,
+      0,
+      -0.03330686915950731
+    ],
+    "max": [
+      0.03416621871055292,
+      0.17999998041380216,
+      0.03330686915950731
+    ],
+    "size": [
+      0.06833243742110584,
+      0.17999998041380216,
+      0.06661373831901463
+    ]
+  },
+  "textures": [
+    {
+      "name": "SHADDA_Armor_Normal_1K",
+      "mime": "image/png",
+      "bytes": 1301151,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "SHADDA_Armor_BaseColor_1K",
+      "mime": "image/png",
+      "bytes": 829904,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "SHADDA_Armor_ORM_1K",
+      "mime": "image/png",
+      "bytes": 977103,
+      "size": [
+        1024,
+        1024
+      ]
+    }
+  ],
+  "animations": [
+    {
+      "name": "shadda_power_cell_Mechanics_Test",
+      "channels": 1
+    }
+  ],
+  "controls": [
+    {
+      "name": "DockPoint",
+      "translation": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "GrabPoint",
+      "translation": [
+        0,
+        0.1737265309411784,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "RIG_CellHandle",
+      "translation": [
+        0,
+        0.15828418382115395,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "RIG_CellBody",
+      "translation": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    }
+  ],
+  "morphs": [],
+  "validation": {
+    "uri": "shadda_power_cell_LOD2.glb",
+    "mimeType": "model/gltf-binary",
+    "validatorVersion": "2.0.0-dev.3.10",
+    "validatedAt": "2026-10-12T05:17:26.897Z",
+    "issues": {
+      "numErrors": 0,
+      "numWarnings": 0,
+      "numInfos": 3,
+      "numHints": 0,
+      "messages": [
+        {
+          "code": "UNUSED_OBJECT",
+          "message": "This object may be unused.",
+          "severity": 2,
+          "pointer": "/extensions/KHR_lights_punctual/lights/0"
+        },
+        {
+          "code": "UNUSED_OBJECT",
+          "message": "This object may be unused.",
+          "severity": 2,
+          "pointer": "/extensions/KHR_lights_punctual/lights/1"
+        },
+        {
+          "code": "UNUSED_OBJECT",
+          "message": "This object may be unused.",
+          "severity": 2,
+          "pointer": "/extensions/KHR_lights_punctual/lights/2"
+        }
+      ],
+      "truncated": false
+    },
+    "info": {
+      "version": "2.0",
+      "generator": "glTF-Transform v4.5.1",
+      "extensionsUsed": [
+        "KHR_lights_punctual",
+        "KHR_materials_clearcoat",
+        "KHR_materials_emissive_strength"
+      ],
+      "extensionsRequired": [
+        "KHR_lights_punctual"
+      ],
+      "resources": [
+        {
+          "pointer": "/buffers/0",
+          "mimeType": "application/gltf-buffer",
+          "storage": "glb",
+          "byteLength": 3270328
+        },
+        {
+          "pointer": "/images/0",
+          "mimeType": "image/png",
+          "storage": "buffer-view",
+          "image": {
+            "width": 1024,
+            "height": 1024,
+            "format": "rgba",
+            "primaries": "srgb",
+            "transfer": "srgb",
+            "bits": 8
+          }
+        },
+        {
+          "pointer": "/images/1",
+          "mimeType": "image/png",
+          "storage": "buffer-view",
+          "image": {
+            "width": 1024,
+            "height": 1024,
+            "format": "rgba",
+            "primaries": "srgb",
+            "transfer": "srgb",
+            "bits": 8
+          }
+        },
+        {
+          "pointer": "/images/2",
+          "mimeType": "image/png",
+          "storage": "buffer-view",
+          "image": {
+            "width": 1024,
+            "height": 1024,
+            "format": "rgba",
+            "primaries": "srgb",
+            "transfer": "srgb",
+            "bits": 8
+          }
+        }
+      ],
+      "animationCount": 1,
+      "materialCount": 10,
+      "hasMorphTargets": false,
+      "hasSkins": false,
+      "hasTextures": true,
+      "hasDefaultScene": true,
+      "drawCallCount": 26,
+      "totalVertexCount": 4457,
+      "totalTriangleCount": 7800,
+      "maxUVs": 1,
+      "maxInfluences": 0,
+      "maxAttributes": 4
+    }
+  }
+}

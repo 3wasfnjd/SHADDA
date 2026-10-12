@@ -1,4 +1,4 @@
-name: SHADDA Quest APK - Stage A
+name: SHADDA Quest APK - Playtest
 on:
   push:
     branches: [main]
@@ -48,19 +48,21 @@ jobs:
         run: godot --headless --xr-mode off --path . --script tests/test_meta_extension.gd
       - name: Test intro timing and focus interruption
         run: godot --headless --xr-mode off --path . --script tests/test_intro.gd
+      - name: Test physical play loop and battery ownership
+        run: timeout 180 godot --headless --xr-mode off --path . --fixed-fps 90 --script tests/test_gameplay.gd
       - name: Capture in-engine preview
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libgl1-mesa-dri
           timeout 120 xvfb-run -a godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility -- --preview
       - name: Export native ARM64 Android APK
-        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SHADDA-Quest-AR-v0.1.0.apk
+        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SHADDA-Quest-AR-v0.2.0.apk
       - name: Verify manifest, ABI, splash, and certificate
         run: python3 tools/verify_apk.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: SHADDA-Quest-AR-v0.1.0-stage-a
+          name: SHADDA-Quest-AR-v0.2.0-playtest
           path: build/
           if-no-files-found: error
           retention-days: 14
