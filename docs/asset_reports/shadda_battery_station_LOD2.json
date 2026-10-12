@@ -1,0 +1,294 @@
+{
+  "level": 2,
+  "bytes": 3385656,
+  "triangles": 11927,
+  "primitives": 46,
+  "nodes": 56,
+  "materials": 13,
+  "skins": 0,
+  "bounds": {
+    "min": [
+      -0.19340001046657562,
+      0,
+      -0.08886639773845673
+    ],
+    "max": [
+      0.19339999556541443,
+      0.37585531813115436,
+      0.10200000356417149
+    ],
+    "size": [
+      0.38680000603199005,
+      0.37585531813115436,
+      0.19086640130262822
+    ]
+  },
+  "textures": [
+    {
+      "name": "SHADDA_Armor_Normal_1K",
+      "mime": "image/png",
+      "bytes": 1301151,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "SHADDA_Armor_BaseColor_1K",
+      "mime": "image/png",
+      "bytes": 829904,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "SHADDA_Armor_ORM_1K",
+      "mime": "image/png",
+      "bytes": 977103,
+      "size": [
+        1024,
+        1024
+      ]
+    }
+  ],
+  "animations": [
+    {
+      "name": "shadda_battery_station_Mechanics_Test",
+      "channels": 4
+    }
+  ],
+  "controls": [
+    {
+      "name": "BatterySocket_01",
+      "translation": [
+        -0.10000000149011612,
+        0.052000001072883606,
+        0.010999999940395355
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "BatterySocket_02",
+      "translation": [
+        0,
+        0.052000001072883606,
+        0.010999999940395355
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "BatterySocket_03",
+      "translation": [
+        0.10000000149011612,
+        0.052000001072883606,
+        0.010999999940395355
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "RIG_Lock_01",
+      "translation": [
+        -0.06300000101327896,
+        0.05999999865889549,
+        0.010999999940395355
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "RIG_Lock_02",
+      "translation": [
+        0.03700000047683716,
+        0.05999999865889549,
+        0.010999999940395355
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "RIG_Lock_03",
+      "translation": [
+        0.13699999451637268,
+        0.05999999865889549,
+        0.010999999940395355
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "RIG_StationHandle",
+      "translation": [
+        0,
+        0.28299999237060547,
+        -0.03200000151991844
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "RIG_StatusDisplay",
+      "translation": [
+        0,
+        0.2800000011920929,
+        -0.009999999776482582
+      ],
+      "rotation": [
+        -0.10452849512929184,
+        0,
+        0,
+        0.9945218920194797
+      ]
+    },
+    {
+      "name": "RIG_StationFrame",
+      "translation": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ]
+    }
+  ],
+  "morphs": [],
+  "validation": {
+    "uri": "shadda_battery_station_LOD2.glb",
+    "mimeType": "model/gltf-binary",
+    "validatorVersion": "2.0.0-dev.3.10",
+    "validatedAt": "2026-10-12T04:49:29.190Z",
+    "issues": {
+      "numErrors": 0,
+      "numWarnings": 0,
+      "numInfos": 3,
+      "numHints": 0,
+      "messages": [
+        {
+          "code": "UNUSED_OBJECT",
+          "message": "This object may be unused.",
+          "severity": 2,
+          "pointer": "/extensions/KHR_lights_punctual/lights/0"
+        },
+        {
+          "code": "UNUSED_OBJECT",
+          "message": "This object may be unused.",
+          "severity": 2,
+          "pointer": "/extensions/KHR_lights_punctual/lights/1"
+        },
+        {
+          "code": "UNUSED_OBJECT",
+          "message": "This object may be unused.",
+          "severity": 2,
+          "pointer": "/extensions/KHR_lights_punctual/lights/2"
+        }
+      ],
+      "truncated": false
+    },
+    "info": {
+      "version": "2.0",
+      "generator": "glTF-Transform v4.5.1",
+      "extensionsUsed": [
+        "KHR_lights_punctual",
+        "KHR_materials_clearcoat",
+        "KHR_materials_emissive_strength"
+      ],
+      "extensionsRequired": [
+        "KHR_lights_punctual"
+      ],
+      "resources": [
+        {
+          "pointer": "/buffers/0",
+          "mimeType": "application/gltf-buffer",
+          "storage": "glb",
+          "byteLength": 3350680
+        },
+        {
+          "pointer": "/images/0",
+          "mimeType": "image/png",
+          "storage": "buffer-view",
+          "image": {
+            "width": 1024,
+            "height": 1024,
+            "format": "rgba",
+            "primaries": "srgb",
+            "transfer": "srgb",
+            "bits": 8
+          }
+        },
+        {
+          "pointer": "/images/1",
+          "mimeType": "image/png",
+          "storage": "buffer-view",
+          "image": {
+            "width": 1024,
+            "height": 1024,
+            "format": "rgba",
+            "primaries": "srgb",
+            "transfer": "srgb",
+            "bits": 8
+          }
+        },
+        {
+          "pointer": "/images/2",
+          "mimeType": "image/png",
+          "storage": "buffer-view",
+          "image": {
+            "width": 1024,
+            "height": 1024,
+            "format": "rgba",
+            "primaries": "srgb",
+            "transfer": "srgb",
+            "bits": 8
+          }
+        }
+      ],
+      "animationCount": 1,
+      "materialCount": 13,
+      "hasMorphTargets": false,
+      "hasSkins": false,
+      "hasTextures": true,
+      "hasDefaultScene": true,
+      "drawCallCount": 32,
+      "totalVertexCount": 6880,
+      "totalTriangleCount": 10797,
+      "maxUVs": 1,
+      "maxInfluences": 0,
+      "maxAttributes": 4
+    }
+  }
+}

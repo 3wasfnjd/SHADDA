@@ -5,3 +5,5 @@ build/
 *.keystore
 *.jks
 *.p12
+*.import
+assets/models/runtime/*_SHADDA_*.png
