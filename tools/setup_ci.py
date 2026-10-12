@@ -38,7 +38,12 @@ engine = CACHE/'Godot_v4.7.2-stable_linux.x86_64'
 engine.chmod(0o755)
 plugin=download('https://github.com/GodotVR/godot_openxr_vendors/releases/download/5.1.0-stable/godotopenxrvendorsaddon.zip','vendors.zip')
 assert digest(plugin)=='6a838dbdf4115549e4511ebee0da9a5dcc8f9f6258d4cc2f2ee57a907a3e2911'
-with zipfile.ZipFile(plugin) as z: z.extractall(ROOT)
+unpack = CACHE/'vendor-unpack'
+with zipfile.ZipFile(plugin) as z: z.extractall(unpack)
+addon = next(unpack.glob('**/addons/godotopenxrvendors'))
+shutil.copytree(addon, ROOT/'addons/godotopenxrvendors', dirs_exist_ok=True)
+assert (ROOT/'addons/godotopenxrvendors/plugin.gdextension').is_file()
+assert list((ROOT/'addons/godotopenxrvendors/.bin/linux').rglob('*.so'))
 settings=pathlib.Path.home()/'.config/godot/editor_settings-4.7.tres'
 settings.parent.mkdir(parents=True,exist_ok=True)
 settings.write_text('[gd_resource type="EditorSettings" format=3]\n[resource]\n'+
@@ -51,5 +56,6 @@ preset.write_text(preset.read_text().replace('version/code=1', 'version/code='+o
 with open(os.environ['GITHUB_PATH'],'a') as f:f.write(str(CACHE)+'\n')
 shutil.copy2(engine,CACHE/'godot')
 (ROOT/'build').mkdir(exist_ok=True)
+(ROOT/'build/.gdignore').write_text('')
 (ROOT/'build/versions.txt').write_text('Godot 4.7.2-stable\nOpenXR Vendors 5.1.0-stable\nJDK 17\nSDK compile 36 / target 34 / min 29\nNDK 29.0.14206865\nMobile Vulkan\nDevelopment signature; not tested on Quest 3\n')
 print('Pinned Godot SHA-512 and official vendor SHA-256 verified')
