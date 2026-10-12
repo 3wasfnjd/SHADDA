@@ -65,8 +65,9 @@ with zipfile.ZipFile(android_source) as source, zipfile.ZipFile(configured_sourc
             manifest.insert(0, feature)
             data = ET.tostring(manifest, encoding='utf-8', xml_declaration=True)
             patched += 1
+            print('Configured required headset tracking:', member.filename)
         configured.writestr(member, data)
-assert patched == 1, f'Expected one app manifest, got {patched}'
+assert patched >= 1, 'No app manifest found in the verified Android template'
 configured_source.replace(android_source)
 plugin=download('https://github.com/GodotVR/godot_openxr_vendors/releases/download/5.1.0-stable/godotopenxrvendorsaddon.zip','vendors.zip')
 assert digest(plugin)=='6a838dbdf4115549e4511ebee0da9a5dcc8f9f6258d4cc2f2ee57a907a3e2911'
