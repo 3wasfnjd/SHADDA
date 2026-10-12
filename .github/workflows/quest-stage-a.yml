@@ -1,10 +1,11 @@
 name: SHADDA Quest APK - Stage A
 on:
   push:
-    branches: [main, 'stage-a/**']
+    branches: [main]
     paths-ignore: ['docs/**', 'assets/models/original/**']
   pull_request:
     branches: [main]
+    paths-ignore: ['docs/**', 'assets/models/original/**']
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,6 +23,10 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: 12266719
+          log-accepted-android-sdk-licenses: false
       - name: Install pinned Android tools
         run: sdkmanager 'platforms;android-36' 'platforms;android-34' 'build-tools;36.1.0' 'ndk;29.0.14206865'
       - uses: actions/cache@v4
