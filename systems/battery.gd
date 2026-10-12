@@ -70,6 +70,7 @@ func stolen() -> bool:
 	if not state.transition(ShaddaBatteryState.State.ROBOT, 0):
 		return false
 	stolen_before = true
+	add_collision_exception_with(arena.enemy)
 	rescued_counted = false
 	magnet_slot = -1
 	freeze = false
@@ -95,6 +96,8 @@ func _physics_process(delta: float) -> void:
 	arena.contain(self)
 	if state.state == ShaddaBatteryState.State.ROBOT:
 		return
+	if get_collision_exceptions().has(arena.enemy):
+		remove_collision_exception_with(arena.enemy)
 	# A held cell must be allowed to leave its socket. Docking starts only
 	# after release or an explicit hand-off to the station return tether.
 	if dock_cooldown > 0.0 or state.state == ShaddaBatteryState.State.PLAYER:

@@ -87,14 +87,18 @@ func run() -> void:
 	game.release_hand(1)
 	# Return a genuinely stolen cell; no copy is ever spawned.
 	b.state.state = ShaddaBatteryState.State.GROUND
-	b.global_transform = Transform3D(Basis.IDENTITY,Vector3(-.45,.35,.30))
+	b.global_transform = Transform3D(Basis.IDENTITY,game.enemy.hand.global_position)
 	b.linear_velocity = Vector3.ZERO
 	b.angular_velocity = Vector3.ZERO
 	check(b.stolen(),"robot owns stolen battery")
+	game.enemy.carried = b
+	game.enemy.mode = ShaddaThief.Mode.RECOVER
+	game.enemy.cooldown = 999.0
 	check(game.grab(0,b,b.global_position,anchors[0]),"player can contest robot grip")
 	game.tethers[0].rest_length = .1
 	await steps(40)
 	check(b.state.state==ShaddaBatteryState.State.PLAYER,"physical tension frees stolen cell")
+	game.enemy.mode = ShaddaThief.Mode.DISABLED
 	check(game.return_to_station(0),"explicit station tether accepted")
 	await steps(1080)
 	check(b.state.state==ShaddaBatteryState.State.DOCKED,"return reaches real socket; state=%d pos=%s"%[b.state.state,b.position])
