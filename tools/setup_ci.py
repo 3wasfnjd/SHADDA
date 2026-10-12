@@ -36,6 +36,25 @@ for name in ['Godot_v4.7.2-stable_linux.x86_64.zip', 'Godot_v4.7.2-stable_export
                     with z.open(member) as r, dst.open('wb') as f: shutil.copyfileobj(r,f)
 engine = CACHE/'Godot_v4.7.2-stable_linux.x86_64'
 engine.chmod(0o755)
+# This title only runs on a headset. The vendor's hybrid-app library defaults
+# head tracking to optional; override that in the app manifest before Gradle's
+# manifest merger runs. The official archive was verified above, before this
+# deliberate project-specific configuration.
+android_source = pathlib.Path.home()/'.local/share/godot/export_templates/4.7.2.stable/android_source.zip'
+configured_source = android_source.with_suffix('.configured.zip')
+patched = 0
+with zipfile.ZipFile(android_source) as source, zipfile.ZipFile(configured_source, 'w') as configured:
+    for member in source.infolist():
+        data = source.read(member.filename)
+        if member.filename.endswith('AndroidManifest.xml') and b'.GodotApp' in data and b'<application' in data:
+            assert b'xmlns:tools=' in data
+            assert b'android.hardware.vr.headtracking' not in data
+            feature = b'<uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" tools:node="replace" />\n    '
+            data = data.replace(b'<application', feature + b'<application', 1)
+            patched += 1
+        configured.writestr(member, data)
+assert patched == 1, f'Expected one app manifest, got {patched}'
+configured_source.replace(android_source)
 plugin=download('https://github.com/GodotVR/godot_openxr_vendors/releases/download/5.1.0-stable/godotopenxrvendorsaddon.zip','vendors.zip')
 assert digest(plugin)=='6a838dbdf4115549e4511ebee0da9a5dcc8f9f6258d4cc2f2ee57a907a3e2911'
 unpack = CACHE/'vendor-unpack'
