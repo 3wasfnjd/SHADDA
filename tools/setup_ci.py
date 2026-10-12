@@ -1,4 +1,5 @@
 import hashlib, os, pathlib, shutil, urllib.request, zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CACHE = pathlib.Path(os.environ.get('RUNNER_TEMP', '/tmp')) / 'shadda-deps'
@@ -47,10 +48,22 @@ with zipfile.ZipFile(android_source) as source, zipfile.ZipFile(configured_sourc
     for member in source.infolist():
         data = source.read(member.filename)
         if member.filename.endswith('AndroidManifest.xml') and b'.GodotApp' in data and b'<application' in data:
-            assert b'xmlns:tools=' in data
-            assert b'android.hardware.vr.headtracking' not in data
-            feature = b'<uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" tools:node="replace" />\n    '
-            data = data.replace(b'<application', feature + b'<application', 1)
+            android_ns = 'http://schemas.android.com/apk/res/android'
+            tools_ns = 'http://schemas.android.com/tools'
+            ET.register_namespace('android', android_ns)
+            ET.register_namespace('tools', tools_ns)
+            manifest = ET.fromstring(data)
+            for existing in list(manifest.findall('uses-feature')):
+                if existing.get('{'+android_ns+'}name') == 'android.hardware.vr.headtracking':
+                    manifest.remove(existing)
+            feature = ET.Element('uses-feature', {
+                '{'+android_ns+'}name': 'android.hardware.vr.headtracking',
+                '{'+android_ns+'}required': 'true',
+                '{'+android_ns+'}version': '1',
+                '{'+tools_ns+'}node': 'replace',
+            })
+            manifest.insert(0, feature)
+            data = ET.tostring(manifest, encoding='utf-8', xml_declaration=True)
             patched += 1
         configured.writestr(member, data)
 assert patched == 1, f'Expected one app manifest, got {patched}'
