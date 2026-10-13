@@ -1,57 +1,61 @@
 extends Node3D
+## Boot sequence: OpenXR + passthrough, studio intro, then hands the frame
+## loop to GameDirector. Desktop "--preview" mode fakes the headset so CI can
+## render a flat screenshot of the arena (that preview proves nothing about
+## the Quest; only the headset does).
 
 const IntroClock = preload("res://systems/intro_clock.gd")
+
 var clock = IntroClock.new()
 var xr: OpenXRInterface
 var origin: XROrigin3D
 var head: XRCamera3D
 var studio: Sprite3D
-var menu: Label3D
 var controllers: Array[XRController3D] = []
-var models: Array[Node3D] = []
-var players: Array[AnimationPlayer] = []
-var previous_pose: Array[String] = ["", ""]
+var gauntlets: Array[Gauntlet] = []
+var director: GameDirector
 var foreground: bool = true
 var positioned: bool = false
 var rendered: bool = false
 var failed: bool = false
 var preview: bool = false
+var preview_time: float = 0.0
+var preview_shots: int = 0
+var started: bool = false
+var font: Font
+
 
 func _ready() -> void:
 	preview = OS.get_cmdline_user_args().has("--preview") and not OS.has_feature("android")
 	get_viewport().transparent_bg = true
+	font = load("res://assets/ui/DejaVuSans.ttf")
 	origin = XROrigin3D.new()
 	add_child(origin)
 	head = XRCamera3D.new()
 	head.near = 0.03
+	head.far = 60.0
 	origin.add_child(head)
 	var environment_node := WorldEnvironment.new()
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color(0,0,0,0)
+	environment.background_color = Color(0, 0, 0, 0)
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color(0.85,0.9,1)
-	environment.ambient_light_energy = 0.7
+	environment.ambient_light_color = Color(0.72, 0.82, 1.0)
+	environment.ambient_light_energy = 0.85
+	environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	environment_node.environment = environment
 	add_child(environment_node)
 	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-40,-25,0)
-	light.light_energy = 1.1
+	light.rotation_degrees = Vector3(-48, -30, 0)
+	light.light_energy = 1.0
+	light.light_color = Color(1.0, 0.96, 0.9)
+	light.shadow_enabled = false
 	add_child(light)
 	studio = Sprite3D.new()
 	studio.texture = load("res://assets/ui/studio.png")
 	studio.pixel_size = 0.00085
 	studio.modulate.a = 0.0
-	studio.no_depth_test = false
 	add_child(studio)
-	menu = Label3D.new()
-	menu.font = load("res://assets/ui/DejaVuSans.ttf")
-	menu.text = "شدّة  /  SHADDA\nاختبار القفازات\nTrigger: تصويب     Grip: قبضة\nA/X: فتح     B/Y: إعادة تمركز"
-	menu.font_size = 42
-	menu.pixel_size = 0.001
-	menu.outline_size = 4
-	menu.visible = false
-	add_child(menu)
 	for i in range(2):
 		var controller := XRController3D.new()
 		controller.tracker = &"left_hand" if i == 0 else &"right_hand"
@@ -64,19 +68,25 @@ func _ready() -> void:
 		if packed == null:
 			_stop("تعذر تحميل القفاز")
 			return
-		var model := packed.instantiate() as Node3D
-		controller.add_child(model)
-		model.rotation_degrees.x = -90.0
-		model.position = Vector3(0,-0.02,0.05)
-		model.hide()
-		models.append(model)
-		var found := model.find_children("*", "AnimationPlayer", true, false)
-		players.append(found[0] as AnimationPlayer if not found.is_empty() else null)
+		var gauntlet := Gauntlet.create(i, packed)
+		gauntlet.controller = controller
+		controller.add_child(gauntlet)
+		gauntlet.visible = false
+		gauntlets.append(gauntlet)
+	director = GameDirector.new()
+	add_child(director)
+	director.visible = false
 	xr = XRServer.find_interface("OpenXR") as OpenXRInterface
 	if preview:
-		head.position.y = 1.6
-		controllers[0].position = Vector3(-0.23,1.28,-0.42)
-		controllers[1].position = Vector3(0.23,1.28,-0.42)
+		# Flat desktop stand-in for the room: dark backdrop so the neon reads.
+		environment.background_color = Color(0.05, 0.06, 0.09, 1.0)
+		get_viewport().transparent_bg = false
+		head.position = Vector3(0, 1.6, 0)
+		head.rotation_degrees.x = -22.0
+		controllers[0].position = Vector3(-0.26, 1.18, -0.38)
+		controllers[0].rotation_degrees = Vector3(-30, 8, 0)
+		controllers[1].position = Vector3(0.26, 1.22, -0.38)
+		controllers[1].rotation_degrees = Vector3(-12, -8, 0)
 	else:
 		if xr == null or (not xr.is_initialized() and not xr.initialize()):
 			_stop("تعذر تشغيل OpenXR. أعد تشغيل التطبيق من النظارة.")
@@ -91,14 +101,17 @@ func _ready() -> void:
 			xr.display_refresh_rate = 72.0
 	RenderingServer.frame_post_draw.connect(_frame_drawn)
 
+
 func _frame_drawn() -> void:
 	rendered = true
+
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		foreground = false
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		foreground = true
+
 
 func _tracking_ready() -> bool:
 	if preview:
@@ -115,6 +128,7 @@ func _tracking_ready() -> bool:
 		return false
 	return bool(Engine.get_singleton("OpenXRFbPassthroughExtension").call("is_passthrough_started"))
 
+
 func _process(delta: float) -> void:
 	if failed:
 		return
@@ -125,40 +139,37 @@ func _process(delta: float) -> void:
 		rendered = false
 		return
 	studio.modulate.a = clock.tick(delta, ready and positioned and rendered)
-	menu.visible = clock.finished and ready
 	studio.visible = not clock.finished and ready
-	for i in range(models.size()):
-		models[i].visible = clock.finished and ready and (preview or controllers[i].get_is_active())
-		if not models[i].visible:
-			continue
-		var grip := controllers[i].get_float("grip")
-		var trigger := controllers[i].get_float("trigger")
-		var pose_name := "Fist" if grip > 0.15 else ("Aim" if trigger > 0.15 else "Open")
-		_play_pose(i, pose_name)
-	if preview and clock.finished:
-		if not FileAccess.file_exists("res://build/previews/stage-a.png"):
-			await RenderingServer.frame_post_draw
-			DirAccess.make_dir_recursive_absolute("res://build/previews")
-			get_viewport().get_texture().get_image().save_png("res://build/previews/stage-a.png")
-			get_tree().quit()
-
-func _play_pose(i: int, pose_name: String) -> void:
-	if players[i] == null or previous_pose[i] == pose_name:
+	if clock.finished and not started:
+		started = true
+		director.build(head, gauntlets, font)
+		director.visible = true
+		if preview:
+			director._rift_cursor = 1
+	if not started:
 		return
-	for clip in players[i].get_animation_list():
-		if clip == pose_name or clip.ends_with("/" + pose_name):
-			players[i].play(clip, 0.15)
-			previous_pose[i] = pose_name
-			return
+	for g in gauntlets:
+		g.visible = ready and (preview or g.controller.get_is_active())
+	if not ready:
+		return
+	var triggers := [0.0, 0.0]
+	var grips := [0.0, 0.0]
+	if preview:
+		_preview_input(delta, triggers, grips)
+	else:
+		for i in range(2):
+			triggers[i] = controllers[i].get_float("trigger")
+			grips[i] = controllers[i].get_float("grip")
+	director.update_hands(delta, triggers, grips)
+
 
 func _button(action: StringName, hand_index: int) -> void:
-	if not clock.finished or not foreground:
+	if not clock.finished or not foreground or director == null:
 		return
-	if action == &"by_button":
+	if action == &"by_button" and director.phase != GameDirector.Phase.PLAYING:
 		_recenter()
-	elif action == &"ax_button":
-		_play_pose(hand_index, "Open")
-		controllers[hand_index].trigger_haptic_pulse("haptic",0,0.18,0.06,0)
+	director.on_button(action, hand_index)
+
 
 func _recenter() -> void:
 	var forward := -head.global_basis.z
@@ -168,8 +179,36 @@ func _recenter() -> void:
 	forward = forward.normalized()
 	studio.global_position = head.global_position + forward * 1.6
 	studio.look_at(head.global_position, Vector3.UP, true)
-	menu.global_position = studio.global_position
-	menu.look_at(head.global_position, Vector3.UP, true)
+	if director and started:
+		director.place_layout()
+
+
+## Scripted desktop demo: start the match, let a raider emerge, rope it with
+## the right hand and reel; screenshots land in build/previews/.
+func _preview_input(delta: float, triggers: Array, grips: Array) -> void:
+	preview_time += delta
+	if preview_time > 0.5 and director.phase == GameDirector.Phase.SETUP:
+		director.start_match()
+	# Keep the right gauntlet aimed at the first raider's crown (controller -Z = fingers).
+	if not director.robots.is_empty() and is_instance_valid(director.robots[0]):
+		var crown: Vector3 = director.robots[0].tether_anchor().global_position
+		if crown.distance_to(controllers[1].global_position) > 0.2:
+			controllers[1].look_at(crown, Vector3.UP)
+	if preview_time > 3.4:
+		triggers[1] = 1.0
+	if preview_time > 3.9:
+		grips[1] = 1.0
+	var shots := [[1.4, "stage-c-arena"], [3.2, "stage-c-raider"], [3.7, "stage-c-tether"], [4.6, "stage-c-pull"]]
+	if preview_shots < shots.size() and preview_time >= shots[preview_shots][0]:
+		await RenderingServer.frame_post_draw
+		DirAccess.make_dir_recursive_absolute("res://build/previews")
+		get_viewport().get_texture().get_image().save_png("res://build/previews/%s.png" % shots[preview_shots][1])
+		var right := gauntlets[1]
+		print("preview shot %s: tether state=%d tension=%0.2f robots=%d" % [shots[preview_shots][1], right.tether.state, right.tether.tension, director.robots.size()])
+		preview_shots += 1
+		if preview_shots >= shots.size():
+			get_tree().quit()
+
 
 func _stop(message: String) -> void:
 	failed = true

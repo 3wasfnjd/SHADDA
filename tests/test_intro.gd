@@ -13,3 +13,11 @@ func _initialize() -> void:
 	assert(c.finished and is_zero_approx(c.opacity()))
 	print("PASS: intro 5.0 s, focus pause, fade intervals")
 	quit(0)
+
+var _elapsed := 0.0
+func _process(delta: float) -> bool:
+	_elapsed += delta
+	if _elapsed > 40.0:
+		printerr("FAIL: test timed out (an assert above probably failed)")
+		quit(1)
+	return false

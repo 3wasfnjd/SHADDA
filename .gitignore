@@ -5,3 +5,6 @@ build/
 *.keystore
 *.jks
 *.p12
+*.import
+*.uid
+assets/models/runtime/*_1K.png
