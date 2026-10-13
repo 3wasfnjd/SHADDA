@@ -66,6 +66,10 @@ jobs:
         run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SHADDA-Quest-AR-v0.2.0.apk
       - name: Verify manifest, ABI, splash, and certificate
         run: python3 tools/verify_apk.py
+      - name: Publish package report as a check annotation
+        run: |
+          echo "::notice title=package-report::$(python3 -c 'import json;print(json.dumps(json.load(open("build/package-report.json"))))')"
+          echo "::notice title=apk-sha256::$(cat build/SHADDA-Quest-AR-v0.2.0.apk.sha256)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
