@@ -35,6 +35,8 @@ var _capture_ring: MeshInstance3D
 var _rift_cursor: int = 0
 var _last_wave: int = -2
 var _result_time: float = 0.0
+var audio: ShaddaAudio
+var floor_offset: float = 0.0        # manual floor correction (left stick, before the match)
 
 
 func build(camera: XRCamera3D, hands: Array[Gauntlet], ui_font: Font) -> void:
@@ -50,6 +52,8 @@ func build(camera: XRCamera3D, hands: Array[Gauntlet], ui_font: Font) -> void:
 		"C": load("res://assets/models/runtime/shadda_robot_C.glb"),
 		"D": load("res://assets/models/runtime/shadda_robot_D.glb"),
 	}
+	audio = ShaddaAudio.new()
+	add_child(audio)
 	station = Station.create(_scenes["station"])
 	add_child(station)
 	station.install_cells(_scenes["cell"], self)
@@ -92,16 +96,16 @@ func place_layout() -> void:
 	if forward.length_squared() < 0.001:
 		forward = Vector3.FORWARD
 	forward = forward.normalized()
-	var feet := Vector3(head.global_position.x, 0.0, head.global_position.z)
-	station.global_position = feet + forward.rotated(Vector3.UP, deg_to_rad(-STATION_ANGLE)) * STATION_DISTANCE
-	station.look_at(feet, Vector3.UP, true)
+	var feet := feet_local()
+	station.position = feet + forward.rotated(Vector3.UP, deg_to_rad(-STATION_ANGLE)) * STATION_DISTANCE
+	station.look_at(to_global(feet), Vector3.UP, true)
 	station.rotation.x = 0.0
 	station.rotation.z = 0.0
 	for i in range(rifts.size()):
 		var direction := forward.rotated(Vector3.UP, deg_to_rad(RIFT_ANGLES[i]))
 		var rift := rifts[i]
-		rift.global_position = feet + direction * RIFT_DISTANCE
-		rift.look_at(feet, Vector3.UP, true)
+		rift.position = feet + direction * RIFT_DISTANCE
+		rift.look_at(to_global(feet), Vector3.UP, true)
 		rift.rotation.x = 0.0
 		rift.rotation.z = 0.0
 	_status.global_position = station.global_position + Vector3(0, 0.78, 0)
@@ -150,8 +154,7 @@ func on_button(action: StringName, hand_index: int) -> void:
 func _process(delta: float) -> void:
 	if head == null:
 		return
-	var feet := Vector3(head.global_position.x, 0.0, head.global_position.z)
-	_capture_ring.global_position = feet + Vector3(0, 0.004, 0)
+	_capture_ring.position = feet_local() + Vector3(0, 0.004, 0)
 	_banner_time = maxf(0.0, _banner_time - delta)
 	if _banner_time <= 0.0 and _banner.visible and phase == Phase.PLAYING:
 		_banner.visible = false
@@ -197,6 +200,7 @@ func _spawn(kind: String) -> void:
 	rift.open()
 	var robot := Robot.create(kind, _scenes[kind])
 	add_child(robot)
+	cue("spawn", rift.global_position)
 	robot.configure(rift, station, Callable(self, "capture_center"))
 	robot.defeated.connect(_on_robot_defeated)
 	robot.escaped.connect(_on_robot_escaped)
@@ -205,8 +209,30 @@ func _spawn(kind: String) -> void:
 	robots.append(robot)
 
 
+## The player's feet in arena-local space (arena y = 0 is the floor).
+func feet_local() -> Vector3:
+	var local := to_local(head.global_position)
+	return Vector3(local.x, 0.0, local.z)
+
+
 func capture_center() -> Vector3:
 	return Vector3(head.global_position.x, 0.0, head.global_position.z)
+
+
+## Left stick before the match nudges the whole arena up/down when the
+## headset's floor estimate is off. Returns the current offset in metres.
+func adjust_floor(axis: float, delta: float) -> float:
+	if phase == Phase.PLAYING or absf(axis) < 0.25:
+		return floor_offset
+	floor_offset = clampf(floor_offset + axis * delta * 0.25, -0.8, 0.8)
+	position.y = floor_offset
+	_set_banner("ضبط الأرضية: %+.2f م\nاضغط A أو X لبدء الجولة" % floor_offset, 2.0)
+	return floor_offset
+
+
+func cue(name: String, point: Vector3) -> void:
+	if audio:
+		audio.play_cue(name, point)
 
 
 func _on_robot_defeated(robot: Robot) -> void:
@@ -214,6 +240,7 @@ func _on_robot_defeated(robot: Robot) -> void:
 	captures += 1
 	plan.robot_gone()
 	robots.erase(robot)
+	cue("capture", robot.global_position)
 	_set_banner("إسقاط!  +%d" % SCORE_CAPTURE, 1.2)
 
 
@@ -225,16 +252,19 @@ func _on_robot_escaped(robot: Robot, with_cell: bool) -> void:
 
 
 func _on_cell_taken(_robot: Robot) -> void:
+	cue("alert", station.global_position)
 	_set_banner("سرقة! أوقفه قبل الفجوة", 1.8)
 
 
 func _on_cell_dropped(_robot: Robot, cell: Node3D) -> void:
 	var drop := cell.global_position + Vector3(0, 0.1, 0)
 	(cell as PowerCell).drop_at(drop)
+	cue("drop", drop)
 	_set_banner("أسقطها! التقطها بـ Grip وأعدها للمحطة", 2.2)
 
 
 func on_cell_docked(_cell: PowerCell) -> void:
+	cue("dock", station.global_position)
 	score += SCORE_RESCUE
 	_set_banner("استعادة!  +%d" % SCORE_RESCUE, 1.2)
 
@@ -243,6 +273,7 @@ func _check_end() -> void:
 	if station.lost_count() >= station.cells.size():
 		phase = Phase.LOST
 		_result_time = 0.0
+		cue("loss", station.global_position)
 		for rift in rifts:
 			rift.close()
 		_set_banner("انتهت المباراة — سُرقت كل البطاريات\nالنتيجة %d · إسقاطات %d\nاضغط A أو X لإعادة اللعب" % [score, captures], 999.0)
@@ -252,6 +283,7 @@ func _check_end() -> void:
 		_result_time = 0.0
 		var bonus := station.docked_count() * SCORE_CELL_BONUS
 		score += bonus
+		cue("win", station.global_position)
 		for rift in rifts:
 			rift.close()
 		_set_banner("انتصار! الغرفة آمنة\nالنتيجة %d · إسقاطات %d · مكافأة البطاريات %d\nاضغط A أو X لإعادة اللعب" % [score, captures, bonus], 999.0)

@@ -160,6 +160,7 @@ func _process(delta: float) -> void:
 		for i in range(2):
 			triggers[i] = controllers[i].get_float("trigger")
 			grips[i] = controllers[i].get_float("grip")
+		director.adjust_floor(controllers[0].get_vector2("thumbstick").y, delta)
 	director.update_hands(delta, triggers, grips)
 
 

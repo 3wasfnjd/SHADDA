@@ -110,7 +110,7 @@ func configure(rift: Node3D, target_station: Node3D, capture_center: Callable) -
 	station = target_station
 	_capture_center_fn = capture_center
 	global_position = rift.spawn_inside()
-	global_position.y = 0.0
+	position.y = 0.0
 	look_toward(rift.spawn_outside())
 
 
@@ -162,7 +162,7 @@ func _physics_process(delta: float) -> void:
 			var t := clampf(_timer / 1.1, 0.0, 1.0)
 			scale = Vector3.ONE * maxf(0.05, t)
 			var exit: Vector3 = home_rift.spawn_outside()
-			exit.y = hover
+			exit.y = global_position.y - position.y + hover
 			global_position = global_position.lerp(exit, delta * 2.4)
 			Neon.set_halo_color(_halo, Neon.CYAN, (1.0 - t) * 0.9)
 			if t >= 1.0:
@@ -223,11 +223,11 @@ func _physics_process(delta: float) -> void:
 		_drop_cell()
 		_stun(STUN_SECONDS)
 	move_and_slide()
-	# Keep ground robots on the floor, flyers at their altitude.
+	# Keep ground robots on the arena floor (parent-local y = 0), flyers at their altitude.
 	if hover <= 0.0:
-		global_position.y = 0.0
+		position.y = 0.0
 	else:
-		global_position.y = lerpf(global_position.y, hover + sin(_bob * 2.1) * 0.06, delta * 3.0)
+		position.y = lerpf(position.y, hover + sin(_bob * 2.1) * 0.06, delta * 3.0)
 	# Capture check: dragged into the player's ring.
 	if state != State.DEFEAT and _capture_center_fn.is_valid() and not tethers.is_empty():
 		var center: Vector3 = _capture_center_fn.call()

@@ -14,12 +14,15 @@ func _initialize() -> void:
 	assert(is_equal_approx(TetherMath.tension(1.0 + TetherMath.SLACK_BAND * 0.5, 1.0), 0.5))
 	# Pull points from the robot toward the hand, scales down with mass, zero when slack.
 	var hand := Vector3(0, 1.2, 0)
-	var anchor := Vector3(0, 0.8, -2.0)
+	var anchor := Vector3(0, 0.8, -1.2)
 	var light := TetherMath.pull_velocity(hand, anchor, 1.0, 1.0, 1.0 / 90.0)
-	var heavy := TetherMath.pull_velocity(hand, anchor, 1.0, 2.6, 1.0 / 90.0)
+	var heavy := TetherMath.pull_velocity(hand, anchor, 1.0, 4.5, 1.0 / 90.0)
 	assert(light.z > 0.0 and light.y > 0.0)
 	assert(light.length() > heavy.length() * 2.0)
 	assert(TetherMath.pull_velocity(hand, anchor, 5.0, 1.0, 0.1) == Vector3.ZERO)
+	# A huge stretch is capped so raiders never teleport into the player's face.
+	var yank := TetherMath.pull_velocity(hand, Vector3(0, 0.8, -6.0), 0.45, 0.5, 1.0 / 90.0)
+	assert(yank.length() <= TetherMath.MAX_DRAG * 6.0 / 90.0 + 1e-6)
 	# Snap timer accumulates only at full tension and decays otherwise.
 	var timer := 0.0
 	for i in range(40):

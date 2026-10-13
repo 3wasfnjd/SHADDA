@@ -24,7 +24,16 @@ func _run() -> void:
 	director.build(head, hands, load("res://assets/ui/DejaVuSans.ttf"))
 	assert(director.station.docked_count() == 3)
 	assert(director.rifts.size() == 3)
-	assert(director.station.global_position.distance_to(Vector3(0, 0, -GameDirector.STATION_DISTANCE)) < 0.01)
+	assert(absf(director.station.position.length() - GameDirector.STATION_DISTANCE) < 0.01)
+	assert(director.station.position.z < 0.0 and director.station.position.x > 0.0, "station front-right of the player")
+	for rift in director.rifts:
+		assert(absf(rift.position.length() - GameDirector.RIFT_DISTANCE) < 0.01)
+	# Manual floor correction moves the whole arena; raiders follow it.
+	director.adjust_floor(1.0, 1.0)
+	assert(director.floor_offset > 0.2 and is_equal_approx(director.position.y, director.floor_offset))
+	director.adjust_floor(-1.0, 1.0)
+	director.position.y = 0.0
+	director.floor_offset = 0.0
 	director.start_match()
 	assert(director.phase == GameDirector.Phase.PLAYING)
 	await process_frame

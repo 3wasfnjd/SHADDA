@@ -141,7 +141,7 @@ func drop_at(point: Vector3) -> void:
 	socket_index = -1
 	holder_hand = -1
 	global_position = point
-	global_position.y = maxf(point.y, 0.05)
+	position.y = maxf(position.y, 0.05)
 	_fall_velocity = 0.6
 	state_changed.emit(self)
 

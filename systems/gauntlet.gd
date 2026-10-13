@@ -84,9 +84,11 @@ func update(delta: float, trigger_value: float, grip_value: float, robots: Array
 		if trigger_down and not _trigger_was_down and held_cell == null and not tether.is_busy():
 			var hit := tether.fire(aim_direction(), robots)
 			_haptic(0.35 if hit else 0.12, 0.05)
+			_cue("fire")
 		if not trigger_down and tether.state == Tether.State.ATTACHED:
 			tether.release()
 			set_light(Light.RELEASE)
+			_cue("release")
 		_update_cell(delta, cells, station)
 	elif tether.is_busy():
 		tether.release()
@@ -105,12 +107,17 @@ func update(delta: float, trigger_value: float, grip_value: float, robots: Array
 	play_pose(pose)
 	# Lights and haptics.
 	if tether.state == Tether.State.ATTACHED:
+		if _light == Light.READY or _light == Light.RELEASE:
+			_cue("attach")
 		set_light(Light.HIGH_TENSION if tether.tension > 0.55 else Light.CONNECTED)
 		var amplitude := TetherMath.haptic_amplitude(tether.tension, grip > 0.3)
 		if amplitude > 0.05 and _haptic_cooldown <= 0.0:
 			_haptic(amplitude, 0.08)
 			_haptic_cooldown = 0.08
 	elif tether.state == Tether.State.SNAP:
+		if _light != Light.RELEASE:
+			_cue("snap")
+			_haptic(0.9, 0.15)
 		set_light(Light.RELEASE)
 	elif _light != Light.READY and tether.state == Tether.State.IDLE:
 		_light_pulse += delta
@@ -148,6 +155,7 @@ func _update_cell(delta: float, cells: Array, station: Station) -> void:
 				cell.set_held(index)
 				held_cell = cell
 				_haptic(0.5, 0.08)
+				_cue("grab")
 				break
 
 
@@ -192,6 +200,11 @@ func _apply_light(delta: float) -> void:
 		var m := _emitters["M_Amber_Emitter"] as StandardMaterial3D
 		m.albedo_color = m.albedo_color.lerp(amber, delta * 10.0)
 	Neon.set_halo_color(_halo, cyan, halo)
+
+
+func _cue(name: String) -> void:
+	if director:
+		director.call("cue", name, hand_position())
 
 
 func _haptic(amplitude: float, seconds: float) -> void:
