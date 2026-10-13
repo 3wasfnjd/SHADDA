@@ -36,6 +36,8 @@ var _guide_mesh := ImmediateMesh.new()
 var _trigger_was_down: bool = false
 var _grip_was_down: bool = false
 var _haptic_cooldown: float = 0.0
+var _creak_timer: float = 0.0
+var _refire_timer: float = 0.0
 
 
 static func create(hand_index: int, scene: PackedScene) -> Gauntlet:
@@ -102,10 +104,13 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 	var trigger_down := trigger > 0.55
 	var grip_down := grip > 0.6
 	if allow_play:
-		if trigger_down and not _trigger_was_down and held_cell == null and not tether.is_busy():
+		_refire_timer = maxf(0.0, _refire_timer - delta)
+		var want_fire := trigger_down and held_cell == null and not tether.is_busy() and (not _trigger_was_down or (tether.state == Tether.State.IDLE and _refire_timer <= 0.0))
+		if want_fire:
 			var hit := tether.fire(aim_direction(), targets, aim_origin())
 			_haptic(0.35 if hit else 0.12, 0.05)
 			_cue("fire")
+			_refire_timer = 0.45
 		if not trigger_down and tether.state == Tether.State.ATTACHED:
 			tether.release()
 			set_light(Light.RELEASE)
@@ -139,6 +144,10 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 		if amplitude > 0.05 and _haptic_cooldown <= 0.0:
 			_haptic(amplitude, 0.08)
 			_haptic_cooldown = 0.08
+		_creak_timer -= delta
+		if tether.tension > 0.6 and _creak_timer <= 0.0:
+			_creak_timer = randf_range(0.25, 0.5)
+			_cue("creak")
 	elif tether.state == Tether.State.SNAP:
 		if _light != Light.RELEASE:
 			_cue("snap")

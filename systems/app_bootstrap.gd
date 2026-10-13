@@ -210,11 +210,11 @@ func _preview_input(delta: float, triggers: Array, grips: Array) -> void:
 		if crown.distance_to(controllers[1].global_position) > 0.2:
 			controllers[1].look_at(crown, Vector3.UP)
 			aim_controllers[1].global_transform = controllers[1].global_transform
-	if preview_time > 6.6:
+	if preview_time > 9.4:
 		triggers[1] = 1.0
-	if preview_time > 7.2:
+	if preview_time > 11.2:
 		grips[1] = 1.0
-	var shots := [[0.4, "placing"], [4.8, "emerge"], [6.3, "walk"], [6.9, "rope"], [8.0, "pull"]]
+	var shots := [[0.4, "placing"], [5.6, "emerge"], [8.6, "walk"], [11.0, "rope"], [12.4, "pull"]]
 	if preview_shots < shots.size() and preview_time >= shots[preview_shots][0]:
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("res://build/previews")

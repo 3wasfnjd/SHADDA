@@ -105,6 +105,28 @@ static func make_floor_ring(color: Color, diameter: float, alpha: float) -> Mesh
 	return mi
 
 
+## A soft dark blob on the floor that grounds virtual objects in the real room.
+static func make_contact_shadow(diameter: float, alpha: float = 0.45) -> MeshInstance3D:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(diameter, diameter)
+	quad.orientation = PlaneMesh.FACE_Y
+	var mi := MeshInstance3D.new()
+	mi.mesh = quad
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.albedo_texture = halo_texture()
+	m.albedo_color = Color(0.0, 0.0, 0.0, alpha)
+	m.render_priority = -1
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position.y = 0.004
+	mi.name = "ContactShadow"
+	return mi
+
+
 static func set_halo_color(halo: MeshInstance3D, color: Color, alpha: float) -> void:
 	var m := halo.material_override as StandardMaterial3D
 	if m:

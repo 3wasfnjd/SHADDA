@@ -17,6 +17,7 @@ var _timer := 0.0
 var _reported := false
 var _capture_requested := false
 var head: Node3D
+var _permitted := false
 
 
 func start(origin: Node3D, player_head: Node3D) -> void:
@@ -25,8 +26,6 @@ func start(origin: Node3D, player_head: Node3D) -> void:
 	if not ClassDB.class_exists("OpenXRFbSceneManager"):
 		_finish(false)
 		return
-	if OS.has_feature("android"):
-		OS.request_permission("com.oculus.permission.USE_SCENE")
 	manager = ClassDB.instantiate("OpenXRFbSceneManager")
 	manager.set("auto_create", false)
 	manager.set("default_scene", load("res://scenes/room_anchor.tscn"))
@@ -34,7 +33,27 @@ func start(origin: Node3D, player_head: Node3D) -> void:
 	manager.connect("openxr_fb_scene_capture_completed", _on_capture_completed)
 	origin.add_child(manager)
 	_started = true
-	manager.call_deferred("create_scene_anchors")
+	if OS.has_feature("android"):
+		get_tree().on_request_permissions_result.connect(_on_permission)
+		if OS.request_permission("com.oculus.permission.USE_SCENE"):
+			_permitted = true
+			manager.call_deferred("create_scene_anchors")
+		else:
+			_timer = -20.0   # the system dialog is up; wait for the answer
+	else:
+		_permitted = true
+		manager.call_deferred("create_scene_anchors")
+
+
+func _on_permission(permission: String, granted: bool) -> void:
+	if permission != "com.oculus.permission.USE_SCENE" or _permitted:
+		return
+	if granted and manager != null:
+		_permitted = true
+		_timer = 0.0
+		manager.call_deferred("create_scene_anchors")
+	else:
+		_finish(false)
 
 
 func _on_missing() -> void:

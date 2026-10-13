@@ -67,6 +67,7 @@ func build(camera: XRCamera3D, hands: Array[Gauntlet]) -> void:
 	for i in range(MAX_RIFTS):
 		var rift := Rift.create(_scenes["rift"])
 		add_child(rift)
+		rift.hum = audio.attach_loop("hum", rift)
 		rifts.append(rift)
 	for g in gauntlets:
 		g.director = self
@@ -143,9 +144,9 @@ func adjust_floor(axis: float, delta: float) -> float:
 	return floor_offset
 
 
-func cue(name: String, point: Vector3) -> void:
+func cue(name: String, point: Vector3, volume_db: float = 0.0) -> void:
 	if audio:
-		audio.play_cue(name, point)
+		audio.play_cue(name, point, volume_db)
 
 
 func on_button(action: StringName, hand_index: int) -> void:
@@ -245,6 +246,7 @@ func _spawn(kind: String) -> void:
 	_rift_cursor += 1
 	rift.open()
 	var robot := Robot.create(kind, _scenes[kind])
+	robot.director = self
 	add_child(robot)
 	robot.configure(rift, station, head)
 	robot.defeated.connect(_on_robot_defeated)
@@ -262,8 +264,9 @@ func _update_rift_moods() -> void:
 		for robot in robots:
 			if is_instance_valid(robot) and robot.home_rift == rift and robot.state != Robot.State.DOWN:
 				busy = true
-		if not busy and rift.is_open():
+		if not busy and rift.is_open() and rift.open_seconds() > 2.5:
 			rift.close()
+			cue("seal", rift.global_position, -6.0)
 	# Warn from the next rift shortly before its raider comes.
 	if spawner.alive < spawner.max_alive() and spawner.next_spawn - spawner.time < 2.0 and not spawner.finished:
 		var available := active_rifts()
@@ -310,6 +313,8 @@ func _end(won: bool) -> void:
 	survived = won
 	_end_timer = 0.0
 	for rift in rifts:
+		if rift.mode != Rift.Mode.CLOSED:
+			cue("seal", rift.global_position)
 		rift.close()
 	for g in gauntlets:
 		g.release_everything()

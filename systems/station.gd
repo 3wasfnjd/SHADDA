@@ -53,6 +53,7 @@ func _ready() -> void:
 	_halo = Neon.make_halo(Neon.CYAN, 0.8, 0.0)
 	_halo.position = Vector3(0, bounds.size.y * 0.5, 0)
 	add_child(_halo)
+	add_child(Neon.make_contact_shadow(maxf(bounds.size.x, bounds.size.z) * 1.25, 0.45))
 	# Solid body so dropped cells and raiders bump into it.
 	_body = StaticBody3D.new()
 	_body.collision_layer = 1
@@ -159,6 +160,8 @@ func place() -> void:
 	placing = false
 	_drop = 1.0
 	_body.collision_layer = 1
+	if get_parent() and get_parent().has_method("cue"):
+		get_parent().call("cue", "thud", global_position)
 
 
 func set_powered(on: bool) -> void:

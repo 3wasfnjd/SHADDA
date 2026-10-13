@@ -51,6 +51,9 @@ var _prev_velocity: Vector3 = Vector3.ZERO
 var _lean: Vector2 = Vector2.ZERO  # pitch, roll
 var _leg_length: float = 0.25
 var _wheel_spin: float = 0.0
+var _shadow: MeshInstance3D
+var _footstep_phase: float = 0.0
+var director: Node = null
 
 
 static func create(robot_kind: String, scene: PackedScene) -> Robot:
@@ -78,9 +81,9 @@ func _ready() -> void:
 	var shape := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = maxf(0.12, minf(bounds.size.x, bounds.size.z) * 0.42)
-	capsule.height = maxf(bounds.size.y, capsule.radius * 2.0 + 0.01)
+	capsule.height = maxf(bounds.size.y - 0.04, capsule.radius * 2.0 + 0.01)
 	shape.shape = capsule
-	shape.position = Vector3(0, bounds.size.y * 0.5, 0)
+	shape.position = Vector3(0, bounds.size.y * 0.5 + 0.03, 0)
 	add_child(shape)
 	crown = model.find_child("TetherPoint_Crown", true, false) as Node3D
 	carry_point = _find_first(["GrabPoint_Backpack_R", "GrabPoint_R", "GrabPoint_Hand_R", "GrabPoint_Arm_R", "GrabPoint_L"])
@@ -102,8 +105,11 @@ func _ready() -> void:
 	_halo = Neon.make_halo(Neon.CYAN, 0.6, 0.0)
 	_halo.position = Vector3(0, bounds.size.y * 0.55, 0)
 	add_child(_halo)
+	_shadow = Neon.make_contact_shadow(maxf(bounds.size.x, bounds.size.z) * 1.3, 0.4)
+	_shadow.top_level = true
+	add_child(_shadow)
 	set_expression("Happy")
-	scale = Vector3.ONE * 0.05
+	_footstep_phase = 0.0
 
 
 func _find_first(names: Array) -> Node3D:
@@ -181,15 +187,21 @@ func _physics_process(delta: float) -> void:
 		_tension = maxf(_tension, t.tension)
 	match state:
 		State.EMERGE:
-			var t := clampf(_timer / 1.4, 0.0, 1.0)
-			scale = Vector3.ONE * maxf(0.05, smoothstep(0.0, 1.0, t))
+			# Wait inside the dark tunnel until the rift has fully opened, then
+			# simply walk out through the opening at full size.
+			if not home_rift.is_fully_open():
+				_timer = 0.0
+				velocity = Vector3.ZERO
+				_animate(delta, true)
+				return
 			var exit: Vector3 = home_rift.spawn_outside()
-			exit.y = global_position.y - position.y + hover
-			global_position = global_position.lerp(exit, delta * 2.0)
-			Neon.set_halo_color(_halo, Neon.CYAN, (1.0 - t) * 0.7)
+			_steer(exit, delta, 0.8)
+			move_and_slide()
+			position.y = 0.0 if hover <= 0.0 else lerpf(position.y, hover, delta * 2.0)
+			var crossed: bool = (global_position - home_rift.threshold_point()).dot(home_rift.global_basis.z) > 0.0
+			Neon.set_halo_color(_halo, Neon.CYAN, 0.22 if crossed and _timer < 0.5 else 0.0)
 			_animate(delta, true)
-			if t >= 1.0:
-				scale = Vector3.ONE
+			if _flat_distance(exit) < 0.15 or _timer > 4.0:
 				state = State.SEEK
 				set_expression("Angry")
 			return
@@ -228,7 +240,12 @@ func _physics_process(delta: float) -> void:
 			var t := clampf((_timer - 2.4) / 0.8, 0.0, 1.0)
 			if t > 0.0:
 				scale = Vector3.ONE * maxf(0.02, 1.0 - t)
-			Neon.set_halo_color(_halo, Neon.CYAN, 0.4 * (1.0 - t))
+			var flicker := 1.0 if (_timer < 1.2 and fmod(_timer * 23.0, 1.0) < 0.35) else 0.0
+			Neon.set_halo_color(_halo, Neon.AMBER if flicker > 0.5 else Neon.CYAN, (0.5 * flicker) if _timer < 1.2 else 0.25 * (1.0 - t))
+			if _emitters.has("M_Amber_Emitter"):
+				(_emitters["M_Amber_Emitter"] as StandardMaterial3D).albedo_color = Neon.AMBER if flicker > 0.5 else Color(0.12, 0.05, 0.02)
+			for eye in eyes:
+				eye.visible = flicker > 0.5
 			if t >= 1.0:
 				state = State.GONE
 				queue_free()
@@ -245,9 +262,16 @@ func _physics_process(delta: float) -> void:
 		_tumble(pull)
 	var before := velocity
 	move_and_slide()
-	# Slammed into a real wall while roped.
-	if state != State.DOWN and is_roped() and get_slide_collision_count() > 0 and before.length() > SLAM_SPEED:
-		_shutdown()
+	# Slammed into a real wall (a scanned room surface) while roped.
+	if state != State.DOWN and is_roped():
+		for i in range(get_slide_collision_count()):
+			var hit := get_slide_collision(i)
+			var collider := hit.get_collider()
+			if collider and collider.has_meta("labels") and before.dot(-hit.get_normal()) > SLAM_SPEED:
+				_shutdown()
+				if director:
+					director.call("cue", "thud", global_position, 4.0)
+				break
 	if hover <= 0.0:
 		position.y = 0.0
 	else:
@@ -319,6 +343,11 @@ func _drop_cell() -> void:
 	cell_dropped.emit(self, dropped)
 
 
+func _exit_tree() -> void:
+	if _shadow and is_instance_valid(_shadow):
+		_shadow.queue_free()
+
+
 func _escape() -> void:
 	var had_cell := cell != null
 	if cell:
@@ -345,7 +374,10 @@ func _animate(delta: float, _emerging: bool) -> void:
 	match gait:
 		"biped":
 			var stride := _leg_length * 1.5
+			var before_phase := _phase
 			_phase += ground_speed * delta / maxf(stride, 0.05) * TAU
+			if floor(before_phase / PI) != floor(_phase / PI) and ground_speed > 0.08 and director:
+				director.call("cue", "step_heavy" if mass > 3.0 else "step", global_position)
 			var amp := clampf(ground_speed / maxf(speed, 0.1), 0.0, 1.0)
 			_biped_legs(amp)
 			body_offset.y = absf(sin(_phase)) * 0.018 * amp
@@ -379,6 +411,11 @@ func _animate(delta: float, _emerging: bool) -> void:
 		body_offset.y -= 0.16 * k
 	_body.rotation = body_rot
 	_body.position.y = _body_rest_y() + body_offset.y
+	if _shadow:
+		_shadow.global_position = Vector3(global_position.x, global_position.y - position.y + 0.004, global_position.z)
+		_shadow.global_rotation = Vector3.ZERO
+		var height_fade := clampf(1.0 - position.y * 0.5, 0.25, 1.0)
+		(_shadow.material_override as StandardMaterial3D).albedo_color = Color(0, 0, 0, 0.4 * height_fade * (0.0 if state == State.GONE else 1.0))
 	_head_tracking(delta)
 	# Lights.
 	var glow := Neon.AMBER if tethers.is_empty() else TetherMath.rope_color(_tension)

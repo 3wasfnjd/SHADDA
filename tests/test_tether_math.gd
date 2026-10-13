@@ -25,10 +25,10 @@ func _initialize() -> void:
 	assert(yank.length() <= TetherMath.MAX_DRAG * 6.0 / 90.0 + 1e-6)
 	# Snap timer accumulates only at full tension and decays otherwise.
 	var timer := 0.0
-	for i in range(40):
+	for i in range(int(TetherMath.SNAP_HOLD * 90.0) - 1):
 		timer = TetherMath.snap_timer(timer, 1.0, 1.0 / 90.0)
-	assert(timer > 0.44 and timer < 0.45 and not TetherMath.should_snap(timer))
-	timer = TetherMath.snap_timer(timer, 1.0, 0.02)
+	assert(not TetherMath.should_snap(timer))
+	timer = TetherMath.snap_timer(timer, 1.0, 0.03)
 	assert(TetherMath.should_snap(timer))
 	timer = TetherMath.snap_timer(timer, 0.2, 1.0)
 	assert(is_zero_approx(timer))

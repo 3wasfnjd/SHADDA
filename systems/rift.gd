@@ -24,6 +24,8 @@ var _emitters: Dictionary = {}
 var _time: float = 0.0
 var _hold_at: float = -1.0
 var alert_level: float = 0.0
+var hum: AudioStreamPlayer3D = null
+var _opened_at: float = 0.0
 
 
 static func create(scene: PackedScene) -> Rift:
@@ -101,6 +103,7 @@ func open() -> void:
 		return
 	var from := T_WARNING if mode == Mode.WARNING else 0.0
 	mode = Mode.OPEN
+	_opened_at = _time
 	_play_to(from, T_ACTIVE)
 
 
@@ -113,6 +116,19 @@ func close() -> void:
 
 func is_open() -> bool:
 	return mode == Mode.OPEN
+
+
+func open_seconds() -> float:
+	return _time - _opened_at if mode == Mode.OPEN else 0.0
+
+
+## True once the opening animation has reached its hold frame.
+func is_fully_open() -> bool:
+	return mode == Mode.OPEN and _hold_at < 0.0
+
+
+func threshold_point() -> Vector3:
+	return _threshold.global_position if _threshold else global_position + Vector3(0, 0.1, 0)
 
 
 func _process(delta: float) -> void:
@@ -140,5 +156,12 @@ func _process(delta: float) -> void:
 		visible = true
 	elif _hold_at < 0.0:
 		visible = false
+	if hum:
+		var want := mode == Mode.OPEN or mode == Mode.WARNING
+		if want and not hum.playing:
+			hum.play()
+		elif not want and hum.playing:
+			hum.stop()
+		hum.volume_db = lerpf(hum.volume_db, -20.0 if mode == Mode.OPEN else -28.0, delta * 2.0)
 	if _emitters.has("M_Rift_Core"):
 		(_emitters["M_Rift_Core"] as StandardMaterial3D).albedo_color = Neon.WHITE.lerp(Neon.CYAN, 0.3 + 0.4 * pulse)

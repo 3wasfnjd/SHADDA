@@ -8,7 +8,7 @@ const REEL_SPEED := 1.0         # m/s of rope reeled in at full grip
 const SLACK_BAND := 0.55        # metres of stretch between taut and snapping
 const SPRING := 18.0            # pull acceleration per metre of stretch (mass 1)
 const MAX_DRAG := 1.6           # m/s cap on rope-induced speed
-const SNAP_HOLD := 0.45         # seconds at full tension before the rope snaps
+const SNAP_HOLD := 0.8          # seconds at full tension before the rope snaps
 const STUN_TENSION := 0.9       # tension at which a robot drops what it carries
 
 

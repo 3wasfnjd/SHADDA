@@ -217,7 +217,8 @@ func update(delta: float, grip: float) -> void:
 				release()
 				return
 			var anchor := anchor_node.global_position
-			rest_length = TetherMath.reel(rest_length, grip, delta)
+			# Winch clutch: the reel slows as tension climbs instead of snapping the rope.
+			rest_length = TetherMath.reel(rest_length, grip * clampf(1.0 - tension * 1.1, 0.0, 1.0), delta)
 			var distance := from.distance_to(anchor)
 			tension = TetherMath.tension(distance, rest_length)
 			snap_timer = TetherMath.snap_timer(snap_timer, tension, delta)
@@ -244,8 +245,8 @@ func _draw(from: Vector3, to: Vector3, rest: float, wobble: float, color: Color,
 	_glow_mat.set_shader_parameter("tint", color)
 	_core_mat.set_shader_parameter("alpha_scale", alpha)
 	_glow_mat.set_shader_parameter("alpha_scale", alpha)
-	_build_ribbon(_core_mesh, points, eye, 0.008 + tension * 0.004)
-	_build_ribbon(_glow_mesh, points, eye, 0.045 + tension * 0.02)
+	_build_ribbon(_core_mesh, points, eye, 0.007 + tension * 0.003)
+	_build_ribbon(_glow_mesh, points, eye, 0.036 + tension * 0.015)
 
 
 func _build_ribbon(mesh: ImmediateMesh, points: PackedVector3Array, _eye: Vector3, radius: float) -> void:

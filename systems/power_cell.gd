@@ -25,6 +25,7 @@ var _emitters: Dictionary = {}
 var _halo: MeshInstance3D
 var _time: float = 0.0
 var _shown_levels: int = -1
+var _shadow: MeshInstance3D
 
 
 static func create(scene: PackedScene) -> PowerCell:
@@ -65,11 +66,21 @@ func _ready() -> void:
 	_halo = Neon.make_halo(Neon.CYAN, 0.3, 0.0)
 	_halo.position = bounds.get_center()
 	add_child(_halo)
+	_shadow = Neon.make_contact_shadow(0.22, 0.35)
+	_shadow.top_level = true
+	add_child(_shadow)
 	_apply_visuals(true)
 
 
 func _process(delta: float) -> void:
 	_time += delta
+	if _shadow:
+		var floor_y := world.global_position.y if world else 0.0
+		_shadow.visible = state == State.LOOSE or state == State.HELD
+		_shadow.global_position = Vector3(global_position.x, floor_y + 0.004, global_position.z)
+		_shadow.global_rotation = Vector3.ZERO
+		var h := clampf(global_position.y - floor_y, 0.0, 1.5)
+		(_shadow.material_override as StandardMaterial3D).albedo_color = Color(0, 0, 0, 0.35 * (1.0 - h * 0.5))
 	match state:
 		State.DOCKED:
 			charge = minf(1.0, charge + CHARGE_PER_SECOND * delta)
