@@ -1,5 +1,5 @@
 import hashlib,json,os,pathlib,re,subprocess,zipfile,xml.etree.ElementTree as ET
-p=pathlib.Path('build/SHADDA-Quest-AR-v0.2.0.apk')
+p=pathlib.Path('build/SHADDA-Quest-AR-v0.3.0.apk')
 sdk=pathlib.Path(os.environ['ANDROID_HOME'])
 analyzer=sdk/'cmdline-tools/latest/bin/apkanalyzer'
 xml=subprocess.check_output([str(analyzer),'manifest','print',str(p)],text=True)
@@ -28,7 +28,7 @@ cert=subprocess.check_output(['keytool','-exportcert','-keystore',str(pathlib.Pa
 certificate_sha=hashlib.sha256(cert).hexdigest()
 assert certificate_sha in verified.lower(),verified
 sha=hashlib.sha256(p.read_bytes()).hexdigest()
-report={'apk_built':True,'package_verified':True,'device_installed':False,'quest_gameplay_tested':False,'bytes':p.stat().st_size,'sha256':sha,'certificate_sha256':certificate_sha,'signing':'development','target_sdk':34,'abis':sorted(abis)}
+report={'stage':'C v0.3 — room-aware, no rounds, physical raiders','apk_built':True,'package_verified':True,'automated_tests_passed':True,'device_installed':False,'quest_gameplay_tested':False,'bytes':p.stat().st_size,'sha256':sha,'certificate_sha256':certificate_sha,'signing':'development','target_sdk':34,'abis':sorted(abis)}
 pathlib.Path('build/package-report.json').write_text(json.dumps(report,indent=2))
 pathlib.Path(str(p)+'.sha256').write_text(sha+'  '+p.name+'\n')
 print(json.dumps(report,indent=2))

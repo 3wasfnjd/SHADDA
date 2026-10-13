@@ -6,4 +6,5 @@ build/
 *.jks
 *.p12
 *.import
-assets/models/runtime/*_SHADDA_*.png
+*.uid
+assets/models/runtime/*_1K.png
