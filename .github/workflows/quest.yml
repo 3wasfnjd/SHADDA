@@ -1,16 +1,13 @@
 name: SHARARA Quest APK
 on:
   push:
-    branches: [main, 'dev/**']
-    paths-ignore: ['docs/**', 'assets/models/original/**']
-  pull_request:
-    branches: [main]
+    branches: ['sharara/**']
     paths-ignore: ['docs/**', 'assets/models/original/**']
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: quest-${{ github.ref }}
+  group: sharara-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   apk:
@@ -73,7 +70,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v0.1.0"
+          TAG="sharara-v0.1.0"
           NOTES="بناء آلي من ${GITHUB_SHA}. تم البناء وفحص الحزمة ونجاح الاختبارات الآلية فقط؛ لم يُثبّت أو يُختبر على Quest. توقيع تطويري."
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes "$NOTES" --prerelease
