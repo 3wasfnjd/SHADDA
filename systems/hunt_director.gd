@@ -28,6 +28,11 @@ var match_time: float = 0.0
 var next_spawn: float = 0.0
 var kills: int = 0
 var survived: bool = false
+var mode: String = "sparks"
+var _mascot: Spark = null
+var _mode_cooldown: float = 0.0
+var combo: int = 0
+var _combo_timer: float = 0.0
 var _rng := RandomNumberGenerator.new()
 var _crack_cursor: int = 0
 var _end_timer: float = 0.0
@@ -145,6 +150,29 @@ func feet_local() -> Vector3:
 	return Vector3(local.x, 0.0, local.z)
 
 
+## Left stick sideways before the match cycles the mode; a floating mascot
+## above the gem shows which critters will come. No text needed.
+func cycle_mode(axis: float, delta: float) -> void:
+	_mode_cooldown = maxf(0.0, _mode_cooldown - delta)
+	if phase != Phase.PLACING or absf(axis) < 0.6 or _mode_cooldown > 0.0:
+		return
+	_mode_cooldown = 0.45
+	var i := SparkMath.MODES.find(mode)
+	i = (i + (1 if axis > 0.0 else -1) + SparkMath.MODES.size()) % SparkMath.MODES.size()
+	set_mode(SparkMath.MODES[i])
+	cue("attach", gem.global_position)
+
+
+func set_mode(new_mode: String) -> void:
+	mode = new_mode
+	if _mascot and is_instance_valid(_mascot):
+		_mascot.queue_free()
+	_mascot = Spark.create(SparkMath.mode_kinds(mode)[0])
+	_mascot.preview_only = true
+	add_child(_mascot)
+	_mascot.player_head = head
+
+
 func adjust_floor(axis: float, delta: float) -> float:
 	if phase == Phase.PLAYING or absf(axis) < 0.25:
 		return floor_offset
@@ -178,7 +206,11 @@ func _place_and_start() -> void:
 	cue("gem_place", gem.global_position)
 	for g in gauntlets:
 		g.release_everything()
+	if _mascot and is_instance_valid(_mascot):
+		_mascot.queue_free()
+		_mascot = null
 	match_time = 0.0
+	combo = 0
 	next_spawn = START_DELAY + SparkMath.FIRST_SPAWN
 	kills = 0
 	survived = false
@@ -204,6 +236,7 @@ func _process(delta: float) -> void:
 			_update_gaze_placement(delta)
 		Phase.PLAYING:
 			match_time += delta
+			_combo_timer = maxf(0.0, _combo_timer - delta)
 			_spawning(delta)
 			_drain(delta)
 			_crack_moods()
@@ -230,6 +263,11 @@ func _update_gaze_placement(delta: float) -> void:
 		away = away.normalized() * clampf(d, 1.0, 3.0)
 	_gaze_point = _gaze_point.lerp(feet + away, minf(1.0, delta * 6.0))
 	gem.global_position = _gaze_point
+	if _mascot == null or not is_instance_valid(_mascot):
+		set_mode(mode)
+	var t := Time.get_ticks_msec() / 1000.0
+	_mascot.global_position = gem.anchor_point() + Vector3(cos(t * 1.2) * 0.35, 0.45 + sin(t * 2.0) * 0.06, sin(t * 1.2) * 0.35)
+	_mascot.velocity = Vector3(-sin(t * 1.2), 0.0, cos(t * 1.2)) * 0.42
 
 
 func _spawning(delta: float) -> void:
@@ -240,7 +278,7 @@ func _spawning(delta: float) -> void:
 		return
 	if match_time >= next_spawn and sparks.size() < SparkMath.max_alive(t):
 		next_spawn = match_time + SparkMath.gap(t)
-		_spawn(SparkMath.pick(t, _rng.randf()))
+		_spawn(SparkMath.pick(t, _rng.randf(), mode))
 
 
 func _spawn(kind: String, at_crack: Crack = null, at_point: Vector3 = Vector3.INF) -> Spark:
@@ -264,6 +302,7 @@ func _spawn(kind: String, at_crack: Crack = null, at_point: Vector3 = Vector3.IN
 	spark.shard_taken.connect(_on_shard_taken)
 	spark.shard_dropped.connect(_on_shard_dropped)
 	spark.split.connect(_on_split)
+	spark.bit_player.connect(_on_bite)
 	sparks.append(spark)
 	cue("spark_spawn", crack.spawn_point())
 	return spark
@@ -291,7 +330,22 @@ func _crack_moods() -> void:
 func _on_spark_died(spark: Spark) -> void:
 	kills += 1
 	sparks.erase(spark)
-	cue("spark_big_pop" if spark.kind == "brute" else "spark_pop", spark.global_position)
+	# Combo: quick successive kills pitch the pop up and shake the gem brighter.
+	combo = combo + 1 if _combo_timer > 0.0 else 1
+	_combo_timer = 2.0
+	var heavy := spark.mass >= 3.0
+	cue("spark_big_pop" if heavy else "spark_pop", spark.global_position, minf(combo - 1, 6) * 1.0)
+	if audio and audio.voices.size() > 0:
+		audio.voices[(audio.cursor + audio.voices.size() - 1) % audio.voices.size()].pitch_scale = 1.0 + minf(combo - 1, 6) * 0.08
+	gem.flash(minf(0.3 + combo * 0.1, 0.8))
+	for g in gauntlets:
+		g.pulse(0.5 + minf(combo, 5) * 0.1)
+
+
+func _on_bite(spark: Spark) -> void:
+	cue("gem_hit", spark.global_position, 2.0)
+	for g in gauntlets:
+		g.bitten()
 
 
 func _on_spark_escaped(spark: Spark, with_shard: bool) -> void:

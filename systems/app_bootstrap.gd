@@ -161,7 +161,9 @@ func _process(delta: float) -> void:
 		for i in range(2):
 			triggers[i] = controllers[i].get_float("trigger")
 			grips[i] = controllers[i].get_float("grip")
-		director.adjust_floor(controllers[0].get_vector2("thumbstick").y, delta)
+		var stick := controllers[0].get_vector2("thumbstick")
+		director.adjust_floor(stick.y, delta)
+		director.cycle_mode(stick.x, delta)
 	director.update_hands(delta, triggers, grips)
 
 
@@ -185,6 +187,9 @@ func _recenter() -> void:
 func _preview_input(delta: float, triggers: Array, grips: Array) -> void:
 	preview_time += delta
 	if preview_time > 0.6 and director.phase == HuntDirector.Phase.PLACING:
+		var wanted := OS.get_environment("SHARARA_PREVIEW_MODE")
+		if wanted != "":
+			director.set_mode(wanted)
 		director.on_button(&"ax_button", 1)
 		director.next_spawn = 0.0
 	if not director.sparks.is_empty() and is_instance_valid(director.sparks[0]):

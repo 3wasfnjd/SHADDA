@@ -36,6 +36,10 @@ var _creak_timer: float = 0.0
 var _refire_timer: float = 0.0
 var _time: float = 0.0
 var _finger_meshes: Array[ImmediateMesh] = []
+var _prev_pos: Vector3 = Vector3.INF
+var hand_velocity: Vector3 = Vector3.ZERO
+var _stunned: float = 0.0
+var _pulse: float = 0.0
 var _fingers: Array[MeshInstance3D] = []
 
 
@@ -146,6 +150,15 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 	_time += delta
 	trigger = trigger_value
 	grip = grip_value
+	_stunned = maxf(0.0, _stunned - delta)
+	_pulse = maxf(0.0, _pulse - delta * 2.0)
+	# Hand speed (for punches).
+	var p := hand_position()
+	if _prev_pos != Vector3.INF and delta > 0.0:
+		hand_velocity = hand_velocity.lerp((p - _prev_pos) / delta, 0.5)
+	_prev_pos = p
+	if _stunned > 0.0:
+		allow_play = false
 	_haptic_cooldown = maxf(0.0, _haptic_cooldown - delta)
 	_refire_timer = maxf(0.0, _refire_timer - delta)
 	var trigger_down := trigger > 0.55
@@ -158,11 +171,19 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 			_cue("fire")
 			_refire_timer = 0.45
 		if not trigger_down and tether.state == Tether.State.ATTACHED:
+			# Sling: letting go of a stretched ball flings it away from the hand.
+			var t := tether.target
+			if t is Spark and t.family == "ball" and tether.tension > 0.35:
+				var dir: Vector3 = (t.global_position - hand_position()).normalized()
+				t.fling(dir, tether.tension)
+				_haptic(0.8, 0.12)
+				_cue("snap")
 			tether.release()
 			set_light(Light.RELEASE)
 			_cue("release")
 		if grip_down and not _grip_was_down:
 			_try_crush()
+		_try_punch(targets)
 	elif tether.is_busy():
 		tether.release()
 	_trigger_was_down = trigger_down
@@ -192,6 +213,34 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 	_build_hand(grip)
 	_apply_light(delta)
 	_draw_guide(allow_play and not tether.is_busy() and trigger > 0.08)
+
+
+## A fast fist through a critter bursts it (or launches a ball).
+func _try_punch(targets: Array) -> void:
+	if hand_velocity.length() < 1.7 or grip < 0.5:
+		return
+	var hand := hand_position()
+	for t in targets:
+		if not is_instance_valid(t) or not t.has_method("punch") or not t.can_be_tethered():
+			continue
+		var to: Vector3 = t.global_position - hand
+		if to.length() < t.radius + 0.14 and hand_velocity.normalized().dot(to.normalized()) > 0.2:
+			t.punch(hand_velocity)
+			_haptic(1.0, 0.2)
+			_cue("capture")
+			return
+
+
+## Bitten by a diving critter: the hand goes dark for a moment.
+func bitten() -> void:
+	_stunned = 0.9
+	if tether.is_busy():
+		tether.release()
+	_haptic(1.0, 0.3)
+
+
+func pulse(amount: float) -> void:
+	_pulse = maxf(_pulse, amount)
 
 
 func _try_crush() -> void:
@@ -243,6 +292,13 @@ func _apply_light(_delta: float) -> void:
 			cyan = Neon.CYAN_DIM
 			amber = Neon.AMBER_DIM
 			halo = 0.06
+	if _stunned > 0.0:
+		var flicker := 1.0 if fmod(_time * 20.0, 1.0) < 0.5 else 0.0
+		cyan = Neon.RED.lerp(Neon.CYAN_DIM, flicker)
+		amber = Neon.AMBER_DIM
+		halo = 0.1
+	cyan = cyan.lerp(Neon.WHITE, _pulse * 0.6)
+	halo += _pulse * 0.5
 	_ring_mat.set_shader_parameter("tint", cyan)
 	_bar_mat.set_shader_parameter("tint", amber)
 	for fi in _fingers:

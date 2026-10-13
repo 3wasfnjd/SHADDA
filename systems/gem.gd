@@ -83,6 +83,10 @@ func recover_shard() -> void:
 	energy = minf(1.0, energy + SparkMath.SHARD_LOSS * 0.6)
 
 
+func flash(amount: float) -> void:
+	_hit = maxf(_hit, amount)
+
+
 func set_alive(on: bool) -> void:
 	alive = on
 

@@ -5,3 +5,5 @@
 - الشعار: معالجة كتابية للاسم المعطى ABODEN GAMES / عبودين قيمز، PNG شفاف موروث من المرحلة الأولى.
 - DejaVu Sans: خط المشروع موروث من المرحلة الأولى، ترخيص DejaVu/Bitstream Vera؛ النص الرسمي https://dejavu-fonts.github.io/License.html . لا تغيير لاسم الخط ولا إعادة بيع منفصلة.
 - Godot: MIT، والإضافة Godot OpenXR Vendors: MIT؛ تراخيصها مرفقة بتوزيعاتها المثبتة. OpenXR وAndroid مكونات البناء الرسمية.
+
+- شعار الاستوديو «عبودين قيمز / ABODEN GAMES»: مُولَّد من نص بخط Baloo Bhaijaan 2 (© 2019 The Baloo 2 Project Authors / Ek Type — SIL OFL 1.1، النص في docs/baloo-OFL.txt) بنفس هوية دحروج (فحمي #262932 وذهبي #e9bc77). الخط نفسه محفوظ في assets/fonts للاستخدام داخل اللعبة.

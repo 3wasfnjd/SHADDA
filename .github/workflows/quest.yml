@@ -52,11 +52,14 @@ jobs:
         run: godot --headless --xr-mode off --path . --script tests/test_spark_math.gd
       - name: Test full hunt loop headless (place, spawn, drain, rope, yank, crush, split, lose, replay)
         run: godot --headless --xr-mode off --path . --script tests/test_scene_smoke.gd
+      - name: Test the other modes headless (snakes, drones, sling, punch, bite)
+        run: godot --headless --xr-mode off --path . --script tests/test_modes_smoke.gd
       - name: Capture in-engine desktop previews (not a Quest capture)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libgl1-mesa-dri
           timeout 150 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility -- --preview
+          for m in snakes drones sling; do mkdir -p build/previews/$m; SHARARA_PREVIEW_MODE=$m timeout 150 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility -- --preview; mv build/previews/*.png build/previews/$m/ 2>/dev/null || true; done
           ls -l build/previews
       - name: Export native ARM64 Android APK
         run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SHARARA-Quest-AR-v0.1.0.apk

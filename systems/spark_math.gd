@@ -4,26 +4,64 @@ extends RefCounted
 ## scene nodes so they can be unit tested headless.
 
 const MATCH_SECONDS := 300.0
-const FIRST_SPAWN := 3.0
-const GAP_START := 9.0
-const GAP_END := 3.2
-const ALIVE_START := 1
-const ALIVE_END := 5
+const FIRST_SPAWN := 2.0
+const GAP_START := 6.5
+const GAP_END := 2.4
+const ALIVE_START := 2
+const ALIVE_END := 6
+
+## Game modes: each has its own family of critters and spawn mix.
+const MODES := ["sparks", "snakes", "drones", "sling"]
 
 ## Per-kind tuning. radius in metres, speed m/s, mass relative to a kind-1
 ## spark, drain_time seconds orbiting the gem before leaving with a shard.
 static func stats(kind: String) -> Dictionary:
 	match kind:
+		# --- sparks ---
 		"zip":
-			return {"radius": 0.085, "speed": 2.4, "mass": 0.55, "weave": 0.9, "weave_hz": 2.6, "drain_time": 1.2, "color": Neon.CYAN, "hp": 1}
+			return {"family": "spark", "radius": 0.085, "speed": 2.6, "mass": 0.55, "weave": 0.9, "weave_hz": 2.6, "drain_time": 1.2, "color": Neon.CYAN, "dive": 4.0}
 		"brute":
-			return {"radius": 0.2, "speed": 0.85, "mass": 4.0, "weave": 0.15, "weave_hz": 0.6, "drain_time": 3.5, "color": Neon.VIOLET, "hp": 1}
+			return {"family": "spark", "radius": 0.2, "speed": 0.9, "mass": 4.0, "weave": 0.15, "weave_hz": 0.6, "drain_time": 3.5, "color": Neon.VIOLET, "dive": 0.0}
 		"splitter":
-			return {"radius": 0.13, "speed": 1.4, "mass": 1.0, "weave": 0.5, "weave_hz": 1.4, "drain_time": 2.0, "color": Color(0.35, 1.0, 0.45), "hp": 1}
+			return {"family": "spark", "radius": 0.13, "speed": 1.5, "mass": 1.0, "weave": 0.5, "weave_hz": 1.4, "drain_time": 2.0, "color": Color(0.35, 1.0, 0.45), "dive": 0.0}
 		"mote":
-			return {"radius": 0.06, "speed": 2.0, "mass": 0.35, "weave": 0.6, "weave_hz": 3.0, "drain_time": 0.9, "color": Color(0.6, 1.0, 0.6), "hp": 1}
+			return {"family": "spark", "radius": 0.06, "speed": 2.2, "mass": 0.35, "weave": 0.6, "weave_hz": 3.0, "drain_time": 0.9, "color": Color(0.6, 1.0, 0.6), "dive": 3.0}
+		# --- snakes: crawl on the floor, long bodies, lose segments when yanked ---
+		"snake":
+			return {"family": "snake", "radius": 0.08, "speed": 1.1, "mass": 1.6, "weave": 0.35, "weave_hz": 1.2, "drain_time": 3.0, "color": Color(0.4, 1.0, 0.5), "dive": 0.0, "segments": 9}
+		"viper":
+			return {"family": "snake", "radius": 0.065, "speed": 1.9, "mass": 1.0, "weave": 0.6, "weave_hz": 2.2, "drain_time": 2.0, "color": Neon.AMBER, "dive": 5.0, "segments": 7}
+		"python":
+			return {"family": "snake", "radius": 0.11, "speed": 0.7, "mass": 4.5, "weave": 0.2, "weave_hz": 0.8, "drain_time": 4.0, "color": Neon.VIOLET, "dive": 0.0, "segments": 13}
+		# --- drones: hover high, bank into turns, carry shards out of windows/doors ---
+		"drone":
+			return {"family": "drone", "radius": 0.11, "speed": 1.6, "mass": 1.1, "weave": 0.4, "weave_hz": 1.1, "drain_time": 2.4, "color": Neon.CYAN, "dive": 6.0}
+		"wasp":
+			return {"family": "drone", "radius": 0.08, "speed": 2.8, "mass": 0.6, "weave": 0.8, "weave_hz": 2.4, "drain_time": 1.4, "color": Neon.AMBER, "dive": 3.5}
+		"hauler":
+			return {"family": "drone", "radius": 0.18, "speed": 0.9, "mass": 3.6, "weave": 0.15, "weave_hz": 0.5, "drain_time": 3.6, "color": Neon.VIOLET, "dive": 0.0}
+		# --- sling: bouncing balls that roll at the gem; rope them and fling them ---
+		"ball":
+			return {"family": "ball", "radius": 0.14, "speed": 1.4, "mass": 1.2, "weave": 0.0, "weave_hz": 0.0, "drain_time": 2.0, "color": Neon.AMBER, "dive": 0.0}
+		"pebble":
+			return {"family": "ball", "radius": 0.09, "speed": 2.4, "mass": 0.6, "weave": 0.0, "weave_hz": 0.0, "drain_time": 1.3, "color": Neon.CYAN, "dive": 0.0}
+		"boulder":
+			return {"family": "ball", "radius": 0.24, "speed": 0.8, "mass": 5.0, "weave": 0.0, "weave_hz": 0.0, "drain_time": 3.5, "color": Neon.VIOLET, "dive": 0.0}
 		_:
-			return {"radius": 0.12, "speed": 1.5, "mass": 1.0, "weave": 0.45, "weave_hz": 1.3, "drain_time": 2.2, "color": Neon.AMBER, "hp": 1}
+			return {"family": "spark", "radius": 0.12, "speed": 1.6, "mass": 1.0, "weave": 0.45, "weave_hz": 1.3, "drain_time": 2.2, "color": Neon.AMBER, "dive": 5.5}
+
+
+## Per-mode spawn table: [basic, fast, splitter-or-null, heavy].
+static func mode_kinds(mode: String) -> Array:
+	match mode:
+		"snakes":
+			return ["snake", "viper", "", "python"]
+		"drones":
+			return ["drone", "wasp", "", "hauler"]
+		"sling":
+			return ["ball", "pebble", "", "boulder"]
+		_:
+			return ["ember", "zip", "splitter", "brute"]
 
 
 static func progress(time: float) -> float:
@@ -49,17 +87,22 @@ static func weights(time: float) -> Dictionary:
 	}
 
 
-static func pick(time: float, roll: float) -> String:
+static func pick(time: float, roll: float, mode: String = "sparks") -> String:
 	var w := weights(time)
+	var kinds := mode_kinds(mode)
+	var slots := ["ember", "zip", "splitter", "brute"]
 	var total := 0.0
-	for k in w:
-		total += w[k]
+	for i in range(4):
+		if kinds[i] != "":
+			total += w[slots[i]]
 	var r := roll * total
-	for k in ["ember", "zip", "splitter", "brute"]:
-		r -= w[k]
+	for i in range(4):
+		if kinds[i] == "":
+			continue
+		r -= w[slots[i]]
 		if r <= 0.0:
-			return k
-	return "ember"
+			return kinds[i]
+	return kinds[0]
 
 
 ## Weaving flight: a sideways/vertical wobble added to the straight path.

@@ -3,7 +3,15 @@ func _initialize() -> void:
 	for k in ["ember", "zip", "brute", "splitter", "mote"]:
 		var s := SparkMath.stats(k)
 		assert(s.radius > 0.0 and s.speed > 0.0 and s.mass > 0.0 and s.drain_time > 0.0)
-	assert(SparkMath.max_alive(0.0) == 1 and SparkMath.max_alive(SparkMath.MATCH_SECONDS) == SparkMath.ALIVE_END)
+	assert(SparkMath.max_alive(0.0) == SparkMath.ALIVE_START and SparkMath.max_alive(SparkMath.MATCH_SECONDS) == SparkMath.ALIVE_END)
+	for mode in SparkMath.MODES:
+		var kinds := SparkMath.mode_kinds(mode)
+		assert(kinds.size() == 4 and kinds[0] != "")
+		for k in kinds:
+			if k != "":
+				assert(SparkMath.stats(k).has("family"))
+		assert(SparkMath.pick(0.0, 0.5, mode) == kinds[0], "early picks the basic critter of " + mode)
+		assert(SparkMath.pick(280.0, 0.99, mode) == kinds[3], "late roll reaches the heavy critter of " + mode)
 	assert(SparkMath.gap(0.0) > SparkMath.gap(200.0))
 	var early := {}
 	for i in range(200):
