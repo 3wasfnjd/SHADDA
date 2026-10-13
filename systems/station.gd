@@ -1,8 +1,8 @@
 class_name Station
 extends Node3D
-## The three-socket battery station: the thing the raiders want. Owns the
-## cells' docking, the 7-segment "x/3" counter, slot indicators, and the
-## neon floor ring that turns amber while under attack.
+## The three-socket battery station. Before the match it hovers where the
+## player looks (placement preview); A drops it onto the real floor. Owns the
+## cells' docking, the 7-segment counter, slot lights and the alarm glow.
 
 signal cells_changed(docked: int)
 
@@ -16,14 +16,16 @@ const SEGMENTS := {
 var model: Node3D
 var sockets: Array[Node3D] = []
 var cells: Array[PowerCell] = []
+var placing: bool = true
+var powered: bool = true
 var _segments: Dictionary = {}
 var _slot_levels: Array[MeshInstance3D] = []
 var _emitters: Dictionary = {}
-var _ring: MeshInstance3D
 var _halo: MeshInstance3D
 var _alarm: float = 0.0
 var _time: float = 0.0
-var _locks: Array[Node3D] = []
+var _drop: float = 0.0
+var _body: StaticBody3D
 
 
 static func create(scene: PackedScene) -> Station:
@@ -40,9 +42,6 @@ func _ready() -> void:
 		var socket := model.find_child("BatterySocket_0%d" % i, true, false) as Node3D
 		if socket:
 			sockets.append(socket)
-		var lock := model.find_child("RIG_Lock_0%d" % i, true, false) as Node3D
-		if lock:
-			_locks.append(lock)
 		var level := model.find_child("DISPLAY_Slot_0%d_Level" % i, true, false) as MeshInstance3D
 		if level:
 			_slot_levels.append(level)
@@ -51,12 +50,20 @@ func _ready() -> void:
 		if mi:
 			_segments[seg] = mi
 	var bounds := Neon.merged_aabb(model)
-	_ring = Neon.make_floor_ring(Neon.CYAN, maxf(bounds.size.x, bounds.size.z) * 2.1, 0.45)
-	_ring.position.y = 0.01
-	add_child(_ring)
-	_halo = Neon.make_halo(Neon.CYAN, 0.9, 0.12)
+	_halo = Neon.make_halo(Neon.CYAN, 0.8, 0.0)
 	_halo.position = Vector3(0, bounds.size.y * 0.5, 0)
 	add_child(_halo)
+	# Solid body so dropped cells and raiders bump into it.
+	_body = StaticBody3D.new()
+	_body.collision_layer = 1
+	_body.collision_mask = 0
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = bounds.size
+	shape.shape = box
+	shape.position = Vector3(0, bounds.size.y * 0.5, 0)
+	_body.add_child(shape)
+	add_child(_body)
 
 
 func install_cells(cell_scene: PackedScene, world: Node3D) -> void:
@@ -142,6 +149,22 @@ func approach_point(from: Vector3) -> Vector3:
 	return global_position + to.normalized() * 0.42
 
 
+func begin_placement() -> void:
+	placing = true
+	_body.collision_layer = 0
+
+
+## Lands the station where it currently hovers.
+func place() -> void:
+	placing = false
+	_drop = 1.0
+	_body.collision_layer = 1
+
+
+func set_powered(on: bool) -> void:
+	powered = on
+
+
 func _refresh_display() -> void:
 	var count := docked_count()
 	var lit: Array = SEGMENTS.get(count, SEGMENTS[0])
@@ -154,14 +177,21 @@ func _refresh_display() -> void:
 func _process(delta: float) -> void:
 	_time += delta
 	_alarm = maxf(0.0, _alarm - delta * 0.35)
+	_drop = maxf(0.0, _drop - delta * 4.0)
+	# Placement hover and landing thud.
+	if placing:
+		model.position.y = 0.05 + sin(_time * 3.0) * 0.015
+	else:
+		model.position.y = _drop * _drop * 0.08
 	var count := docked_count()
 	var base := Neon.CYAN if count > 1 else (Neon.AMBER if count == 1 else Neon.RED)
+	if not powered:
+		base = Neon.CYAN_DIM
 	var color := base.lerp(Neon.AMBER, _alarm)
-	var pulse := 0.5 + 0.5 * sin(_time * (2.0 + _alarm * 10.0))
-	Neon.set_halo_color(_ring, color, 0.35 + 0.3 * pulse)
-	Neon.set_halo_color(_halo, color, 0.08 + 0.08 * pulse + _alarm * 0.3)
+	var pulse := 0.5 + 0.5 * sin(_time * (2.0 + _alarm * 10.0 + (4.0 if placing else 0.0)))
+	Neon.set_halo_color(_halo, color, (0.05 + 0.05 * pulse + _alarm * 0.25) if powered else 0.0)
 	if _emitters.has("M_Cyan_Emitter"):
 		(_emitters["M_Cyan_Emitter"] as StandardMaterial3D).albedo_color = color
 	for name in ["M_DisplayCount_a", "M_DisplayCount_g", "M_DisplaySlot_01"]:
 		if _emitters.has(name):
-			(_emitters[name] as StandardMaterial3D).albedo_color = color.lightened(0.2)
+			(_emitters[name] as StandardMaterial3D).albedo_color = color.lightened(0.2) if (powered and (not placing or pulse > 0.5)) else Color(0.02, 0.03, 0.04)

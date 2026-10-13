@@ -12,8 +12,10 @@ var origin: XROrigin3D
 var head: XRCamera3D
 var studio: Sprite3D
 var controllers: Array[XRController3D] = []
+var aim_controllers: Array[XRController3D] = []
 var gauntlets: Array[Gauntlet] = []
 var director: GameDirector
+var room_scan: RoomScan
 var foreground: bool = true
 var positioned: bool = false
 var rendered: bool = false
@@ -68,8 +70,14 @@ func _ready() -> void:
 		if packed == null:
 			_stop("تعذر تحميل القفاز")
 			return
+		var aim := XRController3D.new()
+		aim.tracker = controller.tracker
+		aim.pose = &"aim"
+		origin.add_child(aim)
+		aim_controllers.append(aim)
 		var gauntlet := Gauntlet.create(i, packed)
 		gauntlet.controller = controller
+		gauntlet.aim_node = aim
 		controller.add_child(gauntlet)
 		gauntlet.visible = false
 		gauntlets.append(gauntlet)
@@ -82,11 +90,14 @@ func _ready() -> void:
 		environment.background_color = Color(0.05, 0.06, 0.09, 1.0)
 		get_viewport().transparent_bg = false
 		head.position = Vector3(0, 1.6, 0)
-		head.rotation_degrees.x = -22.0
+		head.rotation_degrees.x = -36.0
 		controllers[0].position = Vector3(-0.26, 1.18, -0.38)
 		controllers[0].rotation_degrees = Vector3(-30, 8, 0)
 		controllers[1].position = Vector3(0.26, 1.22, -0.38)
 		controllers[1].rotation_degrees = Vector3(-12, -8, 0)
+		for i in range(2):
+			aim_controllers[i].position = controllers[i].position
+			aim_controllers[i].rotation = controllers[i].rotation
 	else:
 		if xr == null or (not xr.is_initialized() and not xr.initialize()):
 			_stop("تعذر تشغيل OpenXR. أعد تشغيل التطبيق من النظارة.")
@@ -142,10 +153,16 @@ func _process(delta: float) -> void:
 	studio.visible = not clock.finished and ready
 	if clock.finished and not started:
 		started = true
-		director.build(head, gauntlets, font)
+		director.build(head, gauntlets)
 		director.visible = true
 		if preview:
+			director.on_room_ready([], 0.0, false)
 			director._rift_cursor = 1
+		else:
+			room_scan = RoomScan.new()
+			add_child(room_scan)
+			room_scan.room_ready.connect(director.on_room_ready)
+			room_scan.start(origin, head)
 	if not started:
 		return
 	for g in gauntlets:
@@ -167,8 +184,6 @@ func _process(delta: float) -> void:
 func _button(action: StringName, hand_index: int) -> void:
 	if not clock.finished or not foreground or director == null:
 		return
-	if action == &"by_button" and director.phase != GameDirector.Phase.PLAYING:
-		_recenter()
 	director.on_button(action, hand_index)
 
 
@@ -180,32 +195,32 @@ func _recenter() -> void:
 	forward = forward.normalized()
 	studio.global_position = head.global_position + forward * 1.6
 	studio.look_at(head.global_position, Vector3.UP, true)
-	if director and started:
-		director.place_layout()
 
 
-## Scripted desktop demo: start the match, let a raider emerge, rope it with
-## the right hand and reel; screenshots land in build/previews/.
+## Scripted desktop demo: place the station, let a raider emerge, rope it
+## with the right hand and reel; screenshots land in build/previews/.
 func _preview_input(delta: float, triggers: Array, grips: Array) -> void:
 	preview_time += delta
-	if preview_time > 0.5 and director.phase == GameDirector.Phase.SETUP:
-		director.start_match()
-	# Keep the right gauntlet aimed at the first raider's crown (controller -Z = fingers).
+	if preview_time > 0.6 and director.phase == GameDirector.Phase.PLACING:
+		director.on_button(&"ax_button", 1)
+		director.spawner.next_spawn = 0.0
+	# Keep the right controller aimed at the first raider's crown.
 	if not director.robots.is_empty() and is_instance_valid(director.robots[0]):
 		var crown: Vector3 = director.robots[0].tether_anchor().global_position
 		if crown.distance_to(controllers[1].global_position) > 0.2:
 			controllers[1].look_at(crown, Vector3.UP)
-	if preview_time > 3.4:
+			aim_controllers[1].global_transform = controllers[1].global_transform
+	if preview_time > 6.6:
 		triggers[1] = 1.0
-	if preview_time > 3.9:
+	if preview_time > 7.2:
 		grips[1] = 1.0
-	var shots := [[1.4, "stage-c-arena"], [3.2, "stage-c-raider"], [3.7, "stage-c-tether"], [4.6, "stage-c-pull"]]
+	var shots := [[0.4, "placing"], [4.8, "emerge"], [6.3, "walk"], [6.9, "rope"], [8.0, "pull"]]
 	if preview_shots < shots.size() and preview_time >= shots[preview_shots][0]:
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("res://build/previews")
 		get_viewport().get_texture().get_image().save_png("res://build/previews/%s.png" % shots[preview_shots][1])
 		var right := gauntlets[1]
-		print("preview shot %s: tether state=%d tension=%0.2f robots=%d" % [shots[preview_shots][1], right.tether.state, right.tether.tension, director.robots.size()])
+		print("preview shot %s: phase=%d tether=%d tension=%0.2f robots=%d" % [shots[preview_shots][1], director.phase, right.tether.state, right.tether.tension, director.robots.size()])
 		preview_shots += 1
 		if preview_shots >= shots.size():
 			get_tree().quit()

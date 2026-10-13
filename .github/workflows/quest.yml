@@ -50,8 +50,8 @@ jobs:
         run: godot --headless --xr-mode off --path . --script tests/test_intro.gd
       - name: Test rope arithmetic
         run: godot --headless --xr-mode off --path . --script tests/test_tether_math.gd
-      - name: Test wave schedule
-        run: godot --headless --xr-mode off --path . --script tests/test_round_plan.gd
+      - name: Test spawn pressure curve
+        run: godot --headless --xr-mode off --path . --script tests/test_spawn_director.gd
       - name: Test runtime assets and triangle budget
         run: godot --headless --xr-mode off --path . --script tests/test_assets.gd
       - name: Test full gameplay loop headless (spawn, steal, rope, drop, dock, capture, lose, replay)
@@ -63,30 +63,30 @@ jobs:
           timeout 150 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility -- --preview
           ls -l build/previews
       - name: Export native ARM64 Android APK
-        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SHADDA-Quest-AR-v0.2.0.apk
+        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SHADDA-Quest-AR-v0.3.0.apk
       - name: Verify manifest, ABI, splash, and certificate
         run: python3 tools/verify_apk.py
       - name: Publish package report as a check annotation
         run: |
           echo "::notice title=package-report::$(python3 -c 'import json;print(json.dumps(json.load(open("build/package-report.json"))))')"
-          echo "::notice title=apk-sha256::$(cat build/SHADDA-Quest-AR-v0.2.0.apk.sha256)"
+          echo "::notice title=apk-sha256::$(cat build/SHADDA-Quest-AR-v0.3.0.apk.sha256)"
       - name: Publish APK as a GitHub pre-release (direct download, GitHub only — never Meta)
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v0.2.0-stage-c"
+          TAG="v0.3.0-stage-c"
           NOTES="بناء آلي من ${GITHUB_SHA} — المرحلة ج. تم البناء وفحص الحزمة ونجاح الاختبارات الآلية فقط؛ لم يُثبّت أو يُختبر على Quest. توقيع تطويري."
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes "$NOTES" --prerelease
           else
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "SHADDA v0.2.0 — المرحلة ج (اختبار)" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "SHADDA v0.3.0 — المرحلة ج (اختبار)" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
           fi
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/SHADDA-Quest-AR-v0.2.0.apk build/SHADDA-Quest-AR-v0.2.0.apk.sha256 build/package-report.json build/versions.txt
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/SHADDA-Quest-AR-v0.3.0.apk build/SHADDA-Quest-AR-v0.3.0.apk.sha256 build/package-report.json build/versions.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: SHADDA-Quest-AR-v0.2.0-stage-c
+          name: SHADDA-Quest-AR-v0.3.0-stage-c
           path: build/
           if-no-files-found: error
           retention-days: 14

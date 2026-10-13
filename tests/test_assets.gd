@@ -3,7 +3,7 @@ extends SceneTree
 ## stays inside the Quest triangle budget. Also exercises Neon.restyle.
 const BUDGET := {
 	"shadda_robot_A": 45000, "shadda_robot_B": 45000, "shadda_robot_C": 45000, "shadda_robot_D": 45000,
-	"shadda_battery_station": 15000, "shadda_power_cell": 9000, "shadda_rift_small": 8000,
+	"shadda_battery_station": 15000, "shadda_power_cell": 9000, "shadda_rift": 9000,
 	"shadda_gauntlet_left": 16000, "shadda_gauntlet_right": 16000,
 }
 const REQUIRED := {
@@ -13,13 +13,13 @@ const REQUIRED := {
 	"shadda_robot_D": ["TetherPoint_Crown", "GrabPoint_Arm_R", "FACE_Eye_L"],
 	"shadda_battery_station": ["BatterySocket_01", "BatterySocket_02", "BatterySocket_03", "DISPLAY_Count_seg_a", "DISPLAY_Count_seg_g", "DISPLAY_Slot_03_Level"],
 	"shadda_power_cell": ["GrabPoint", "CORE_Level_01", "CORE_Level_04", "CORE_Helix_0", "CORE_EnergySymbol"],
-	"shadda_rift_small": ["SpawnInside_Small", "SpawnOutside_Small", "SpawnThreshold_Small"],
+	"shadda_rift": ["SpawnInside", "SpawnOutside", "SpawnThreshold"],
 	"shadda_gauntlet_left": ["TetherOrigin", "AimAxis", "GripAnchor"],
 	"shadda_gauntlet_right": ["TetherOrigin", "AimAxis", "GripAnchor"],
 }
 const ANIMS := {
 	"shadda_gauntlet_left": ["Open", "Fist", "Aim", "TetherGrip", "Pull", "Release"],
-	"shadda_rift_small": ["Portal_Sequence"],
+	"shadda_rift": ["Portal_Sequence"],
 }
 func _initialize() -> void:
 	var total := 0
@@ -43,7 +43,7 @@ func _initialize() -> void:
 			assert(eye.mesh.get_blend_shape_count() == 3)
 		inst.free()
 	# Worst case on screen: 3 raiders (A-class), station, 3 cells, 3 rifts, 2 gauntlets.
-	var worst := BUDGET["shadda_robot_A"] * 3 + BUDGET["shadda_battery_station"] + BUDGET["shadda_power_cell"] * 3 + BUDGET["shadda_rift_small"] * 3 + BUDGET["shadda_gauntlet_left"] * 2
+	var worst := BUDGET["shadda_robot_A"] * 3 + BUDGET["shadda_battery_station"] + BUDGET["shadda_power_cell"] * 3 + BUDGET["shadda_rift"] * 3 + BUDGET["shadda_gauntlet_left"] * 2
 	assert(worst < 260000, "worst-case scene %d triangles" % worst)
 	print("PASS: assets — 9 runtime GLBs, %d triangles total, worst-case frame budget %d" % [total, worst])
 	quit(0)

@@ -50,7 +50,7 @@ void fragment() {
 		a = (0.75 + 0.25 * facing) * pulse * alpha_scale * COLOR.a;
 		rgb = mix(tint.rgb, vec3(1.0), 0.45) * a;
 	} else {
-		a = pow(facing, 1.7) * pulse * alpha_scale * COLOR.a * 0.55;
+		a = pow(facing, 1.9) * pulse * alpha_scale * COLOR.a * 0.32;
 		rgb = tint.rgb * a;
 	}
 	ALBEDO = rgb;
@@ -97,12 +97,14 @@ func is_busy() -> bool:
 	return state == State.FLYING or state == State.ATTACHED
 
 
-## Fires along `direction` from the gauntlet. Returns the robot that was hit, or null.
-func fire(direction: Vector3, robots: Array) -> Node3D:
+## Fires along `direction` (the controller's aim pose) from the gauntlet's
+## emitter. Targets are raiders and loose cells. Returns what was hit, or null.
+func fire(direction: Vector3, targets: Array, aim_from: Vector3 = Vector3.INF) -> Node3D:
 	if _origin == null or is_busy():
 		return null
 	var from := _origin.global_position
-	var hit := _find_target(from, direction.normalized(), robots)
+	var ray_from := aim_from if aim_from != Vector3.INF else from
+	var hit := _find_target(ray_from, direction.normalized(), targets)
 	_fly_from = from
 	_timer = 0.0
 	if hit == null:
@@ -118,16 +120,16 @@ func fire(direction: Vector3, robots: Array) -> Node3D:
 	return hit
 
 
-func _find_target(from: Vector3, direction: Vector3, robots: Array) -> Node3D:
+func _find_target(from: Vector3, direction: Vector3, targets: Array) -> Node3D:
 	var space := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(from, from + direction * RANGE, 2)
+	var query := PhysicsRayQueryParameters3D.create(from, from + direction * RANGE, 2 | 4)
 	var result := space.intersect_ray(query)
-	if not result.is_empty() and result.collider != null and result.collider.has_method("tether_anchor"):
+	if not result.is_empty() and result.collider != null and result.collider.has_method("tether_anchor") and result.collider.can_be_tethered():
 		return result.collider
-	# Aim assist: nearest robot inside a narrow cone.
+	# Aim assist: nearest target inside a narrow cone.
 	var best: Node3D = null
-	var best_score := 0.985   # cos(~10°)
-	for robot in robots:
+	var best_score := 0.975   # cos(~13°)
+	for robot in targets:
 		if not is_instance_valid(robot) or not robot.can_be_tethered():
 			continue
 		var to: Vector3 = robot.tether_anchor().global_position - from
@@ -242,8 +244,8 @@ func _draw(from: Vector3, to: Vector3, rest: float, wobble: float, color: Color,
 	_glow_mat.set_shader_parameter("tint", color)
 	_core_mat.set_shader_parameter("alpha_scale", alpha)
 	_glow_mat.set_shader_parameter("alpha_scale", alpha)
-	_build_ribbon(_core_mesh, points, eye, 0.011 + tension * 0.005)
-	_build_ribbon(_glow_mesh, points, eye, 0.065 + tension * 0.03)
+	_build_ribbon(_core_mesh, points, eye, 0.008 + tension * 0.004)
+	_build_ribbon(_glow_mesh, points, eye, 0.045 + tension * 0.02)
 
 
 func _build_ribbon(mesh: ImmediateMesh, points: PackedVector3Array, _eye: Vector3, radius: float) -> void:

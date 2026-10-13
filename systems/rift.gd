@@ -20,7 +20,6 @@ var _outside: Node3D
 var _threshold: Node3D
 var _halo: MeshInstance3D
 var _glow: MeshInstance3D
-var _ring: MeshInstance3D
 var _emitters: Dictionary = {}
 var _time: float = 0.0
 var _hold_at: float = -1.0
@@ -43,16 +42,14 @@ func _ready() -> void:
 	_inside = model.find_child("SpawnInside_*", true, false) as Node3D
 	_outside = model.find_child("SpawnOutside_*", true, false) as Node3D
 	_threshold = model.find_child("SpawnThreshold_*", true, false) as Node3D
-	_halo = Neon.make_halo(Neon.CYAN, 1.1, 0.0)
-	_halo.position = Vector3(0, 0.45, 0.02)
+	_halo = Neon.make_halo(Neon.CYAN, 1.0, 0.0)
+	_halo.position = Vector3(0, 0.6, 0.03)
 	add_child(_halo)
-	_glow = Neon.make_halo(Neon.VIOLET, 1.9, 0.0)
-	_glow.position = Vector3(0, 0.45, -0.05)
+	_glow = Neon.make_halo(Neon.VIOLET, 1.6, 0.0)
+	_glow.position = Vector3(0, 0.6, -0.04)
 	add_child(_glow)
-	_ring = Neon.make_floor_ring(Neon.CYAN, 1.3, 0.0)
-	_ring.position = Vector3(0, 0.008, 0.35)
-	add_child(_ring)
 	_seek(0.0)
+	visible = false
 
 
 func spawn_inside() -> Vector3:
@@ -82,9 +79,19 @@ func _play_to(from: float, to: float) -> void:
 	_hold_at = to
 
 
+## Mounts the rift on a real surface: `origin` is the point on the wall at
+## floor level, `normal` points into the room, `up` is world up.
+func mount(origin: Vector3, normal: Vector3, up: Vector3 = Vector3.UP) -> void:
+	var z := normal.normalized()
+	var x := up.cross(z).normalized()
+	var y := z.cross(x).normalized()
+	global_transform = Transform3D(Basis(x, y, z), origin)
+
+
 func warn() -> void:
 	if mode == Mode.OPEN or mode == Mode.WARNING:
 		return
+	visible = true
 	mode = Mode.WARNING
 	_play_to(0.0, T_WARNING)
 
@@ -127,8 +134,11 @@ func _process(delta: float) -> void:
 			strength = 0.4
 	strength = maxf(strength, alert_level)
 	var color := Neon.CYAN.lerp(Neon.VIOLET, 0.35 + 0.3 * pulse)
-	Neon.set_halo_color(_halo, color, 0.55 * strength)
-	Neon.set_halo_color(_glow, Neon.VIOLET, 0.22 * strength)
-	Neon.set_halo_color(_ring, color, 0.5 * strength)
+	Neon.set_halo_color(_halo, color, 0.35 * strength)
+	Neon.set_halo_color(_glow, Neon.VIOLET, 0.16 * strength)
+	if mode != Mode.CLOSED:
+		visible = true
+	elif _hold_at < 0.0:
+		visible = false
 	if _emitters.has("M_Rift_Core"):
 		(_emitters["M_Rift_Core"] as StandardMaterial3D).albedo_color = Neon.WHITE.lerp(Neon.CYAN, 0.3 + 0.4 * pulse)
