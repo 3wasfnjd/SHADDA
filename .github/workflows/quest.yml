@@ -8,7 +8,7 @@ on:
     paths-ignore: ['docs/**', 'assets/models/original/**']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: quest-${{ github.ref }}
   cancel-in-progress: true
@@ -70,6 +70,19 @@ jobs:
         run: |
           echo "::notice title=package-report::$(python3 -c 'import json;print(json.dumps(json.load(open("build/package-report.json"))))')"
           echo "::notice title=apk-sha256::$(cat build/SHADDA-Quest-AR-v0.2.0.apk.sha256)"
+      - name: Publish APK as a GitHub pre-release (direct download, GitHub only — never Meta)
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v0.2.0-stage-c"
+          NOTES="بناء آلي من ${GITHUB_SHA} — المرحلة ج. تم البناء وفحص الحزمة ونجاح الاختبارات الآلية فقط؛ لم يُثبّت أو يُختبر على Quest. توقيع تطويري."
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes "$NOTES" --prerelease
+          else
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "SHADDA v0.2.0 — المرحلة ج (اختبار)" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/SHADDA-Quest-AR-v0.2.0.apk build/SHADDA-Quest-AR-v0.2.0.apk.sha256 build/package-report.json build/versions.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
