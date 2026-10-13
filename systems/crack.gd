@@ -12,6 +12,7 @@ const CLOSE_SECONDS := 0.6
 const HEIGHT := 1.1
 
 var mode: int = Mode.CLOSED
+var on_ceiling: bool = false
 var hum: AudioStreamPlayer3D = null
 var _time: float = 0.0
 var _phase_time: float = 0.0
@@ -26,6 +27,9 @@ var _hole: MeshInstance3D
 var _bloom: MeshInstance3D
 var _shape: PackedVector2Array = PackedVector2Array()
 var _spawn: Node3D
+var _swirl: MeshInstance3D
+var _embers: Array[MeshInstance3D] = []
+var _ember_t: Array[float] = []
 
 
 func _ready() -> void:
@@ -72,16 +76,37 @@ func _ready() -> void:
 	_spawn = Node3D.new()
 	_spawn.position = Vector3(0, HEIGHT, 0.15)
 	add_child(_spawn)
+	_swirl = Neon.make_ring_mesh(Neon.VIOLET.lerp(Neon.CYAN, 0.3), 0.2, 0.006)
+	_swirl.position = Vector3(0, HEIGHT, 0.02)
+	add_child(_swirl)
+	for i in range(8):
+		var e := Neon.make_halo(Neon.CYAN, 0.05, 0.0)
+		add_child(e)
+		_embers.append(e)
+		_ember_t.append(randf())
 	visible = false
 	_rebuild(0.0)
 
 
-## Mounts on a surface point at floor level with `normal` pointing into the room.
-func mount(origin: Vector3, normal: Vector3, up: Vector3 = Vector3.UP) -> void:
+## Mounts on a surface point with `normal` pointing into the room. Walls are
+## given their floor point and the ring is lifted to HEIGHT; a ceiling point
+## (normal pointing down) puts the ring right at the point.
+func mount(origin: Vector3, normal: Vector3, up_hint: Vector3 = Vector3.UP) -> void:
 	var z := normal.normalized()
-	var x := up.cross(z).normalized()
+	var hint := up_hint
+	if absf(z.dot(hint)) > 0.9:
+		hint = Vector3.FORWARD if absf(z.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT
+	var x := hint.cross(z).normalized()
 	var y := z.cross(x).normalized()
 	global_transform = Transform3D(Basis(x, y, z), origin)
+	on_ceiling = absf(z.y) > 0.7
+	var lift := 0.0 if on_ceiling else HEIGHT
+	_ring.position.y = lift
+	_ring_glow.position.y = lift
+	_hole.position = Vector3(0, lift, 0.01)
+	_bloom.position = Vector3(0, lift, 0.03)
+	_spawn.position = Vector3(0, lift, 0.15)
+	_swirl.position = Vector3(0, lift, 0.02)
 
 
 func spawn_point() -> Vector3:
@@ -144,6 +169,21 @@ func _process(delta: float) -> void:
 	(_hole.material_override as StandardMaterial3D).albedo_color = Color(0.02, 0.0, 0.06, 0.92 * amount)
 	_hole.scale = Vector3.ONE * maxf(0.01, amount)
 	Neon.set_halo_color(_bloom, Neon.VIOLET, 0.2 * amount * (0.7 + 0.3 * pulse))
+	_swirl.rotation.z += delta * 1.8
+	_swirl.rotation.x = sin(_time * 1.1) * 0.5
+	_swirl.scale = Vector3.ONE * maxf(0.01, amount) * (1.0 + 0.1 * pulse)
+	(_swirl.material_override as StandardMaterial3D).albedo_color = Neon.VIOLET.lerp(Neon.CYAN, 0.3 + 0.4 * pulse)
+	# Embers drift out of the crack and fade.
+	var lift := _spawn.position.y
+	for i in range(_embers.size()):
+		_ember_t[i] += delta * (0.35 + 0.1 * i) * (1.0 if amount > 0.0 else 0.0)
+		if _ember_t[i] >= 1.0:
+			_ember_t[i] -= 1.0
+		var t: float = _ember_t[i]
+		var a := i * 0.8 + _time * 0.1
+		var p := Vector3(cos(a) * (0.1 + t * 0.35), lift + sin(a * 1.7) * 0.1 + t * 0.25, 0.05 + t * 0.55)
+		_embers[i].position = p
+		Neon.set_halo_color(_embers[i], Neon.CYAN.lerp(Neon.VIOLET, t), amount * (1.0 - t) * 0.8)
 	if hum:
 		if is_open() and not hum.playing:
 			hum.play()

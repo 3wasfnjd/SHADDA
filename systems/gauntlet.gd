@@ -35,6 +35,8 @@ var _haptic_cooldown: float = 0.0
 var _creak_timer: float = 0.0
 var _refire_timer: float = 0.0
 var _time: float = 0.0
+var _finger_meshes: Array[ImmediateMesh] = []
+var _fingers: Array[MeshInstance3D] = []
 
 
 static func create(hand_index: int) -> Gauntlet:
@@ -59,6 +61,15 @@ func _ready() -> void:
 	_ring.material_override = _ring_mat
 	_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_ring)
+	for f in range(5):
+		var fm := ImmediateMesh.new()
+		_finger_meshes.append(fm)
+		var fi := MeshInstance3D.new()
+		fi.mesh = fm
+		fi.material_override = Neon.glow_material(Neon.CYAN, true)
+		fi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(fi)
+		_fingers.append(fi)
 	_bar_mat = Neon.glow_material(Neon.AMBER, true)
 	_bar = MeshInstance3D.new()
 	_bar.mesh = _bar_mesh
@@ -81,16 +92,39 @@ func _ready() -> void:
 
 ## Wrist ring + knuckle bar, built in local space. `squeeze` 0..1 tightens the ring.
 func _build_hand(squeeze: float) -> void:
+	# Wrist ring.
 	var ring := PackedVector3Array()
 	var r := 0.045 - squeeze * 0.006
 	for i in range(25):
 		var a := TAU * i / 24.0
 		ring.append(Vector3(cos(a) * r, sin(a) * r * 0.8, 0.045))
 	Neon.build_tube(_ring_mesh, ring, func(_t): return 0.005)
+	# Five neon fingers that curl with the grip (controller space: -Z forward, +Y up).
+	var curl := squeeze * 1.45
+	var pts := PackedVector3Array()
+	for f in range(5):
+		var is_thumb := f == 4
+		var base := Vector3(lerpf(-0.03, 0.03, f / 3.0), 0.012, -0.035) if not is_thumb else Vector3((0.03 if index == 1 else -0.03), 0.004, -0.02)
+		var lengths := [0.035, 0.028, 0.022] if not is_thumb else [0.03, 0.025]
+		var dir := Vector3(0, 0, -1) if not is_thumb else Vector3((0.6 if index == 1 else -0.6), 0.1, -0.8).normalized()
+		var axis := Vector3.RIGHT if not is_thumb else Vector3(0, 1, 0)
+		var p := base
+		var seg := PackedVector3Array()
+		seg.append(p)
+		var d := dir
+		for L in lengths:
+			d = d.rotated(axis, (-curl if not is_thumb else (curl * 0.8 * (1.0 if index == 1 else -1.0))))
+			p += d * L
+			seg.append(p)
+		_finger_meshes[f].clear_surfaces()
+		Neon.build_tube(_finger_meshes[f], seg, func(t): return 0.0045 - t * 0.0015)
+		if f == 0 or f == 3:
+			pts.append(base)
+	# Knuckle bar joins the finger bases.
 	var bar := PackedVector3Array()
 	for i in range(7):
 		var t := i / 6.0
-		bar.append(Vector3(lerpf(-0.035, 0.035, t), 0.012 + sin(t * PI) * 0.006, -0.03 - squeeze * 0.01))
+		bar.append(Vector3(lerpf(-0.03, 0.03, t), 0.012 + sin(t * PI) * 0.005, -0.035))
 	Neon.build_tube(_bar_mesh, bar, func(_t): return 0.004)
 
 
@@ -211,6 +245,8 @@ func _apply_light(_delta: float) -> void:
 			halo = 0.06
 	_ring_mat.set_shader_parameter("tint", cyan)
 	_bar_mat.set_shader_parameter("tint", amber)
+	for fi in _fingers:
+		(fi.material_override as ShaderMaterial).set_shader_parameter("tint", cyan)
 	Neon.set_halo_color(_halo, cyan, halo)
 
 

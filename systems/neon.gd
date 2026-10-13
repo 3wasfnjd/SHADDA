@@ -341,3 +341,130 @@ static func make_orb(color: Color, radius: float, radial: int = 12, rings: int =
 	mi.material_override = emitter_material(color)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
+
+
+## Living orb: hot centre, neon rim, subtle flicker. View-dependent only, so
+## it costs nothing extra on the Mobile renderer.
+const ORB_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_back, shadows_disabled;
+uniform vec4 base : source_color = vec4(1.0, 0.42, 0.06, 1.0);
+uniform vec4 hot : source_color = vec4(1.0, 0.95, 0.8, 1.0);
+uniform float flicker = 6.0;
+uniform float heat = 0.0;
+uniform float dark_shell = 0.0;
+void fragment() {
+	float facing = clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0);
+	float rim = pow(1.0 - facing, 2.2);
+	float n = 0.5 + 0.5 * sin(TIME * flicker + VERTEX.x * 60.0 + VERTEX.y * 45.0 + VERTEX.z * 30.0);
+	vec3 col = mix(base.rgb * 0.5, hot.rgb, pow(facing, 1.6) * (0.8 + 0.2 * n));
+	col += base.rgb * rim * 1.5;
+	if (dark_shell > 0.5) {
+		col = mix(vec3(0.03, 0.02, 0.06), base.rgb * 0.9, rim * 1.2 + 0.08 * n);
+	}
+	ALBEDO = mix(col, vec3(1.0), heat * 0.6);
+}
+"""
+
+## Faceted crystal: flat per-face shading from screen derivatives + fresnel sparkle.
+const GEM_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_back, shadows_disabled;
+uniform vec4 base : source_color = vec4(0.12, 0.82, 1.0, 1.0);
+uniform float heat = 0.0;
+void fragment() {
+	vec3 n = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
+	float facing = abs(dot(n, normalize(VIEW)));
+	float facet = 0.35 + 0.65 * pow(facing, 2.0);
+	float rim = pow(1.0 - facing, 3.0);
+	float sparkle = pow(max(0.0, sin(TIME * 1.7 + n.x * 9.0 + n.y * 7.0)), 24.0);
+	vec3 col = base.rgb * facet + vec3(1.0) * (rim * 0.6 + sparkle * 0.8);
+	ALBEDO = mix(col, vec3(1.0), heat * 0.7);
+}
+"""
+
+static var _orb_shader: Shader
+static var _gem_shader: Shader
+
+
+static func orb_material(color: Color, hot: Color = Color(1.0, 0.95, 0.8), flicker: float = 6.0, dark_shell: bool = false) -> ShaderMaterial:
+	if _orb_shader == null:
+		_orb_shader = Shader.new()
+		_orb_shader.code = ORB_SHADER
+	var m := ShaderMaterial.new()
+	m.shader = _orb_shader
+	m.set_shader_parameter("base", color)
+	m.set_shader_parameter("hot", hot)
+	m.set_shader_parameter("flicker", flicker)
+	m.set_shader_parameter("dark_shell", 1.0 if dark_shell else 0.0)
+	return m
+
+
+static func gem_material(color: Color) -> ShaderMaterial:
+	if _gem_shader == null:
+		_gem_shader = Shader.new()
+		_gem_shader.code = GEM_SHADER
+	var m := ShaderMaterial.new()
+	m.shader = _gem_shader
+	m.set_shader_parameter("base", color)
+	return m
+
+
+static func make_living_orb(color: Color, radius: float, radial: int = 16, rings: int = 8, dark_shell: bool = false) -> MeshInstance3D:
+	var mi := make_orb(color, radius, radial, rings)
+	mi.material_override = orb_material(color, Color(1.0, 0.95, 0.8), 6.0, dark_shell)
+	return mi
+
+
+static func make_crystal(color: Color, radius: float, height_scale: float = 1.4) -> MeshInstance3D:
+	var sphere := SphereMesh.new()
+	sphere.radius = radius
+	sphere.height = radius * 2.0 * height_scale
+	sphere.radial_segments = 5
+	sphere.rings = 3
+	var mi := MeshInstance3D.new()
+	mi.mesh = sphere
+	mi.material_override = gem_material(color)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+
+## A tiny cartoon eye: dark pupil with a white glint. Returns the eye root.
+static func make_eye(radius: float) -> Node3D:
+	var eye := Node3D.new()
+	var pupil := make_orb(Color(0.03, 0.02, 0.08), radius, 10, 5)
+	eye.add_child(pupil)
+	var glint := make_orb(Color.WHITE, radius * 0.35, 6, 3)
+	glint.position = Vector3(radius * 0.35, radius * 0.4, radius * 0.75)
+	eye.add_child(glint)
+	eye.name = "Eye"
+	return eye
+
+
+## A flame lick: a thin cone that flickers in scale.
+static func make_lick(color: Color, radius: float, height: float) -> MeshInstance3D:
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = radius
+	cone.height = height
+	cone.radial_segments = 6
+	cone.rings = 1
+	var mi := MeshInstance3D.new()
+	mi.mesh = cone
+	mi.material_override = orb_material(color, Color(1.0, 0.9, 0.6), 9.0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+
+## A thin neon ring (torus).
+static func make_ring_mesh(color: Color, radius: float, thickness: float) -> MeshInstance3D:
+	var torus := TorusMesh.new()
+	torus.inner_radius = maxf(0.001, radius - thickness)
+	torus.outer_radius = radius + thickness
+	torus.rings = 24
+	torus.ring_segments = 6
+	var mi := MeshInstance3D.new()
+	mi.mesh = torus
+	mi.material_override = emitter_material(color)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi

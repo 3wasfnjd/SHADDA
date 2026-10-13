@@ -103,7 +103,7 @@ func _finish(found: bool) -> void:
 	room_ready.emit(mounts(), floor_y if has_floor else 0.0, found)
 
 
-## Rift mounts: doors first, then windows, then the widest walls.
+## Crack mounts: doors first, then windows, the widest walls, then ceiling points.
 ## Each: {origin: Vector3 (floor level on the surface), normal: Vector3 (into room), width: float, kind: String}
 func mounts() -> Array:
 	var out: Array = []
@@ -116,6 +116,18 @@ func mounts() -> Array:
 			kind = "window"
 		elif a.is_wall():
 			kind = "wall"
+		elif a.labels.has("CEILING"):
+			# Up to three ceiling cracks: centre and the two long-axis thirds.
+			var ct: Transform3D = a.global_transform
+			var cw: float = a.rect.size.x if a.rect.size.x > 0.0 else 3.0
+			var ch: float = a.rect.size.y if a.rect.size.y > 0.0 else 3.0
+			var cx: float = a.rect.position.x + cw * 0.5
+			var cy: float = a.rect.position.y + ch * 0.5
+			var offsets: Array = [Vector2(0, 0), Vector2(cw / 3.0, 0) if cw >= ch else Vector2(0, ch / 3.0), Vector2(-cw / 3.0, 0) if cw >= ch else Vector2(0, -ch / 3.0)]
+			for o in offsets:
+				var cp: Vector3 = ct * Vector3(cx + o.x, cy + o.y, 0.0)
+				out.append({"origin": cp, "normal": Vector3.DOWN, "width": minf(cw, ch), "height": 0.0, "kind": "ceiling"})
+			continue
 		else:
 			continue
 		var t: Transform3D = a.global_transform
@@ -136,7 +148,7 @@ func mounts() -> Array:
 			continue
 		out.append({"origin": origin, "normal": normal, "width": width, "height": height, "kind": kind})
 	out.sort_custom(func(x, y):
-		var rank := {"door": 0, "window": 1, "wall": 2}
+		var rank := {"door": 0, "window": 1, "wall": 2, "ceiling": 3}
 		if rank[x.kind] != rank[y.kind]:
 			return rank[x.kind] < rank[y.kind]
 		return x.width > y.width)

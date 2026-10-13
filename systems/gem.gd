@@ -17,19 +17,23 @@ var _time: float = 0.0
 var _hit: float = 0.0
 var _drop: float = 0.0
 var _body: StaticBody3D
+var _band: MeshInstance3D
 
 
 func _ready() -> void:
-	_crystal = Neon.make_orb(Neon.CYAN, 0.16, 4, 2)
+	_crystal = Neon.make_crystal(Neon.CYAN, 0.15, 1.5)
 	_crystal.position.y = 0.55
 	add_child(_crystal)
-	_crystal_inner = Neon.make_orb(Neon.WHITE, 0.07, 4, 2)
+	_crystal_inner = Neon.make_crystal(Neon.WHITE, 0.07, 1.3)
 	_crystal_inner.position.y = 0.55
 	add_child(_crystal_inner)
-	for i in range(4):
-		var shard := Neon.make_orb(Neon.CYAN, 0.03, 4, 2)
+	for i in range(6):
+		var shard := Neon.make_crystal(Neon.CYAN, 0.028, 1.6)
 		add_child(shard)
 		_ring.append(shard)
+	_band = Neon.make_ring_mesh(Neon.CYAN, 0.26, 0.004)
+	_band.position.y = 0.55
+	add_child(_band)
 	_halo = Neon.make_halo(Neon.CYAN, 1.1, 0.25)
 	_halo.position.y = 0.55
 	add_child(_halo)
@@ -106,13 +110,22 @@ func _process(delta: float) -> void:
 	_crystal.rotation.y += delta * (0.9 if alive else 0.1)
 	_crystal.rotation.x = sin(_time * 0.8) * 0.15
 	_crystal_inner.rotation.y -= delta * 1.6
-	(_crystal.material_override as StandardMaterial3D).albedo_color = color.lerp(Neon.WHITE, _hit)
-	(_crystal_inner.material_override as StandardMaterial3D).albedo_color = Neon.WHITE if alive else Neon.CYAN_DIM
+	(_crystal.material_override as ShaderMaterial).set_shader_parameter("base", color)
+	(_crystal.material_override as ShaderMaterial).set_shader_parameter("heat", _hit)
+	(_crystal_inner.material_override as ShaderMaterial).set_shader_parameter("base", Neon.WHITE if alive else Neon.CYAN_DIM)
+	# Six satellites on three tilted orbits; the number lit = energy.
 	for i in range(_ring.size()):
-		var a := _time * 1.8 + i * TAU / _ring.size()
-		_ring[i].position = Vector3(cos(a) * 0.3, hover + sin(a * 2.0) * 0.08, sin(a) * 0.3)
+		var a := _time * (1.4 + 0.2 * (i % 3)) + i * TAU / _ring.size()
+		var tilt := (i % 3) * 1.05
+		var r := 0.3 + 0.02 * sin(_time * 2.0 + i)
+		_ring[i].position = Vector3(cos(a) * r, hover + sin(a) * r * sin(tilt) * 0.6, sin(a) * r * cos(tilt))
+		_ring[i].rotation = Vector3(_time * 1.3 + i, _time * 0.9, 0.0)
 		_ring[i].visible = alive and (i < int(ceil(energy * _ring.size())))
-		(_ring[i].material_override as StandardMaterial3D).albedo_color = color
+		(_ring[i].material_override as ShaderMaterial).set_shader_parameter("base", color)
+	_band.position.y = hover
+	_band.rotation = Vector3(sin(_time * 0.7) * 0.5, _time * 0.6, cos(_time * 0.5) * 0.5)
+	_band.scale = Vector3.ONE * size
+	(_band.material_override as StandardMaterial3D).albedo_color = color if alive else Neon.CYAN_DIM
 	var halo_alpha := (0.12 + 0.1 * (0.5 + 0.5 * sin(_time * (2.0 + (6.0 if placing else 0.0)))) + _hit * 0.5) if alive else 0.02
 	Neon.set_halo_color(_halo, color, halo_alpha)
 	(_shadow.material_override as StandardMaterial3D).albedo_color = Color(0, 0, 0, 0.4 if alive else 0.15)

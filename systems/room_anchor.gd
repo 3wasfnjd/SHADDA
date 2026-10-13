@@ -14,6 +14,8 @@ func setup_scene(spatial_entity) -> void:
 	if spatial_entity.is_component_supported(3):   # BOUNDED_2D
 		rect = spatial_entity.get_bounding_box_2d()
 	var solid := false
+	if labels.has("CEILING") and spatial_entity.is_component_supported(3):
+		rect = spatial_entity.get_bounding_box_2d()
 	for label in labels:
 		if label in ["WALL_FACE", "FLOOR", "CEILING", "TABLE", "COUCH", "STORAGE", "BED", "SCREEN", "LAMP", "PLANT", "OTHER"]:
 			solid = true

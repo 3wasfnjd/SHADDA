@@ -43,6 +43,17 @@ var _hit_flash: float = 0.0
 var _core: MeshInstance3D
 var _inner: MeshInstance3D
 var _motes: Array[MeshInstance3D] = []
+var _body: Node3D
+var _eyes: Node3D
+var _eye_list: Array[Node3D] = []
+var _licks: Array[MeshInstance3D] = []
+var _fins: Array[MeshInstance3D] = []
+var _plates: Array[MeshInstance3D] = []
+var _seam: MeshInstance3D
+var _blink: float = 0.0
+var _next_blink: float = 2.0
+var _stretch: float = 1.0
+var _body_rot: Basis = Basis.IDENTITY
 var _halo: MeshInstance3D
 var _shadow: MeshInstance3D
 var _shard: MeshInstance3D
@@ -76,20 +87,19 @@ func _ready() -> void:
 	sphere.radius = radius
 	shape.shape = sphere
 	add_child(shape)
-	_core = Neon.make_orb(color, radius, 14, 7)
-	add_child(_core)
-	_inner = Neon.make_orb(Neon.WHITE.lerp(color, 0.25), radius * 0.45, 8, 4)
-	add_child(_inner)
-	for i in range(3):
-		var mote := Neon.make_orb(Neon.WHITE.lerp(color, 0.5), radius * 0.16, 6, 3)
-		add_child(mote)
-		_motes.append(mote)
+	_body = Node3D.new()
+	add_child(_body)
+	_core = Neon.make_living_orb(color, radius, 16, 8)
+	_body.add_child(_core)
+	_inner = Neon.make_orb(Neon.WHITE.lerp(color, 0.2), radius * 0.4, 8, 4)
+	_body.add_child(_inner)
+	_build_character()
 	_halo = Neon.make_halo(color, radius * 6.0, 0.35)
 	add_child(_halo)
 	_shadow = Neon.make_contact_shadow(radius * 3.0, 0.3)
 	_shadow.top_level = true
 	add_child(_shadow)
-	_shard = Neon.make_orb(Neon.WHITE, radius * 0.35, 4, 2)
+	_shard = Neon.make_crystal(Neon.WHITE, radius * 0.3)
 	_shard.visible = false
 	add_child(_shard)
 	_trail_mat = Neon.glow_material(color, false, true)
@@ -273,10 +283,7 @@ func _die() -> void:
 	velocity = Vector3.ZERO
 	has_shard = false
 	_shard.visible = false
-	_core.visible = false
-	_inner.visible = false
-	for m in _motes:
-		m.visible = false
+	_body.visible = false
 	for i in range(_burst.size()):
 		_burst[i].visible = true
 		_burst[i].global_position = global_position
@@ -288,6 +295,108 @@ func _escape() -> void:
 	state = State.DEAD
 	escaped.emit(self, had)
 	queue_free()
+
+
+## Per-kind silhouette: flame licks, fins, rock plates, a glowing seam — and
+## cartoon eyes on every spark so they read as creatures, not bullets.
+func _build_character() -> void:
+	_eyes = Node3D.new()
+	_body.add_child(_eyes)
+	var eye_count := 1 if kind == "mote" else 2
+	var eye_r := radius * (0.22 if kind != "brute" else 0.16)
+	for i in range(eye_count):
+		var eye := Neon.make_eye(eye_r)
+		var x := 0.0 if eye_count == 1 else (-1.0 if i == 0 else 1.0) * radius * 0.42
+		eye.position = Vector3(x, radius * 0.25, radius * 0.82)
+		_eyes.add_child(eye)
+		_eye_list.append(eye)
+	match kind:
+		"ember":
+			for i in range(4):
+				var lick := Neon.make_lick(color, radius * 0.32, radius * 1.3)
+				lick.position = Vector3(cos(i * 1.6) * radius * 0.45, radius * 0.75, sin(i * 1.6) * radius * 0.45)
+				_body.add_child(lick)
+				_licks.append(lick)
+		"zip":
+			for i in range(2):
+				var fin := Neon.make_lick(color, radius * 0.25, radius * 1.4)
+				fin.rotation_degrees = Vector3(90, 0, (28.0 if i == 0 else -28.0))
+				fin.position = Vector3((-1.0 if i == 0 else 1.0) * radius * 0.55, 0.0, -radius * 0.9)
+				_body.add_child(fin)
+				_fins.append(fin)
+			_core.scale = Vector3(0.85, 0.85, 1.25)
+		"brute":
+			for i in range(7):
+				var plate := Neon.make_living_orb(color, radius * 0.55, 7, 4, true)
+				var a := i * 2.4
+				var dir := Vector3(cos(a) * cos(i * 0.9), sin(i * 0.9), sin(a) * cos(i * 0.9)).normalized()
+				plate.position = dir * radius * 0.78
+				plate.scale = Vector3(1.0, 0.55, 1.0)
+				plate.look_at_from_position(plate.position, plate.position + dir, Vector3.UP if absf(dir.y) < 0.9 else Vector3.RIGHT)
+				plate.rotate_object_local(Vector3.RIGHT, PI * 0.5)
+				_body.add_child(plate)
+				_plates.append(plate)
+			for i in range(3):
+				var mote := Neon.make_orb(Neon.WHITE.lerp(color, 0.5), radius * 0.12, 6, 3)
+				_body.add_child(mote)
+				_motes.append(mote)
+		"splitter":
+			_seam = Neon.make_ring_mesh(Neon.WHITE.lerp(color, 0.3), radius * 0.95, radius * 0.05)
+			_seam.rotation_degrees.z = 90.0
+			_body.add_child(_seam)
+			for i in range(2):
+				var mote := Neon.make_orb(Neon.WHITE.lerp(color, 0.5), radius * 0.14, 6, 3)
+				_body.add_child(mote)
+				_motes.append(mote)
+		_:
+			for i in range(2):
+				var mote := Neon.make_orb(Neon.WHITE.lerp(color, 0.5), radius * 0.16, 6, 3)
+				_body.add_child(mote)
+				_motes.append(mote)
+
+
+func _animate_character(delta: float) -> void:
+	# Face the way we fly, with squash & stretch by speed and a hit squash.
+	var flat_speed := velocity.length()
+	if flat_speed > 0.15:
+		var target := Basis.looking_at(velocity.normalized(), Vector3.UP, true)
+		_body_rot = _body_rot.slerp(target, minf(1.0, delta * 6.0)).orthonormalized()
+	var want_stretch := 1.0 + clampf(flat_speed / maxf(speed, 0.1), 0.0, 1.5) * 0.3 - _hit_flash * 0.35
+	_stretch = lerpf(_stretch, want_stretch, minf(1.0, delta * 10.0))
+	var squash := 1.0 / sqrt(maxf(_stretch, 0.3))
+	var breathe := 1.0 + sin(_life * 5.0) * 0.05
+	_body.basis = _body_rot * Basis.from_scale(Vector3(squash, squash, _stretch) * breathe)
+	# Eyes track the player; blink now and then; wide when roped, narrow when draining.
+	if player_head and _eyes:
+		var local := _body.global_basis.inverse() * (player_head.global_position - _eyes.global_position)
+		var yaw := clampf(atan2(local.x, local.z), -0.7, 0.7)
+		var pitch := clampf(-atan2(local.y, Vector2(local.x, local.z).length()), -0.5, 0.5)
+		_eyes.rotation = _eyes.rotation.lerp(Vector3(pitch, yaw, 0), minf(1.0, delta * 8.0))
+	_next_blink -= delta
+	if _next_blink <= 0.0:
+		_blink = 0.14
+		_next_blink = randf_range(1.6, 4.5)
+	_blink = maxf(0.0, _blink - delta)
+	var open := 1.0 if _blink <= 0.0 else 0.12
+	var mood := 1.35 if is_roped() else (0.6 if state == State.DRAIN else 1.0)
+	for eye in _eye_list:
+		eye.scale = Vector3(mood, open * mood, 1.0)
+	# Decorations.
+	for i in range(_licks.size()):
+		var f := 0.75 + 0.35 * sin(_life * (9.0 + i * 1.7) + i)
+		_licks[i].scale = Vector3(1.0, f, 1.0)
+		_licks[i].rotation = Vector3(sin(_life * 7.0 + i) * 0.25, 0.0, cos(_life * 6.0 + i * 2.0) * 0.25)
+	for i in range(_fins.size()):
+		_fins[i].rotation_degrees.z = (28.0 if i == 0 else -28.0) + sin(_life * 14.0 + i) * 12.0
+	for i in range(_plates.size()):
+		_plates[i].position = _plates[i].position.normalized() * radius * (0.78 + 0.04 * sin(_life * 2.0 + i))
+	if _seam:
+		_seam.rotation.y += delta * 2.5
+	for i in range(_motes.size()):
+		var a := _life * (3.0 + i * 0.7) + i * TAU / 3.0
+		var tilt := i * 1.1
+		_motes[i].position = Vector3(cos(a) * radius * 1.5, sin(a) * radius * 1.5 * sin(tilt), sin(a) * radius * 1.5 * cos(tilt))
+	(_core.material_override as ShaderMaterial).set_shader_parameter("heat", _hit_flash + (0.35 if state == State.STUN else 0.0))
 
 
 func _animate(delta: float) -> void:
@@ -304,17 +413,10 @@ func _animate(delta: float) -> void:
 		if t >= 1.0:
 			queue_free()
 		return
-	# Motes orbit; the core breathes; the halo brightens when roped or hit.
-	for i in range(_motes.size()):
-		var a := _life * (3.0 + i * 0.7) + i * TAU / 3.0
-		var tilt := i * 1.1
-		_motes[i].position = Vector3(cos(a) * radius * 1.5, sin(a) * radius * 1.5 * sin(tilt), sin(a) * radius * 1.5 * cos(tilt))
-	var breathe := 1.0 + sin(_life * 5.0) * 0.06 + _hit_flash * 0.25
-	_core.scale = Vector3.ONE * breathe
+	_animate_character(delta)
 	_inner.scale = Vector3.ONE * (1.0 + sin(_life * 9.0) * 0.15)
 	var glow := color if not is_roped() else TetherMath.rope_color(_tension)
 	Neon.set_halo_color(_halo, glow, 0.3 + _hit_flash * 0.5 + _tension * 0.3 + (0.2 if state == State.STUN else 0.0))
-	(_core.material_override as StandardMaterial3D).albedo_color = color.lerp(Neon.WHITE, _hit_flash * 0.6)
 	_shard.position = Vector3(0, radius * 1.4, 0)
 	_shard.rotation.y += delta * 4.0
 	# Trail.

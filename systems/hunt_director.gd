@@ -9,8 +9,9 @@ extends Node3D
 enum Phase { SCANNING, PLACING, PLAYING, ENDED }
 
 const MAX_CRACKS := 4
-const FALLBACK_DISTANCE := 2.6
-const FALLBACK_ANGLES := [-75.0, -25.0, 25.0, 75.0]
+const FALLBACK_CEILING := 2.45          # metres above the floor when the room is unknown
+const FALLBACK_DISTANCE := 1.6
+const FALLBACK_ANGLES := [-60.0, 0.0, 60.0, 180.0]
 const START_DELAY := 2.0
 
 var phase: int = Phase.SCANNING
@@ -77,23 +78,47 @@ func on_room_ready(mounts: Array, floor_y: float, found: bool) -> void:
 	phase = Phase.PLACING
 
 
+## Doors and windows first, then at most two walls, then one ceiling point,
+## then whatever is left — never a crack floating in the room.
 func _mount_cracks_on_room() -> void:
-	var used := 0
-	for m in room_mounts:
-		if used >= cracks.size():
-			break
-		var too_close := false
-		for j in range(used):
-			if cracks[j].global_position.distance_to(m.origin) < 1.0:
-				too_close = true
-		if too_close:
-			continue
-		cracks[used].mount(Vector3(m.origin.x, floor_offset, m.origin.z), m.normal)
-		used += 1
-	for i in range(used, cracks.size()):
-		cracks[i].global_position = Vector3(0, -50, 0)
+	var chosen: Array = []
+	var walls := 0
+	var ceilings := 0
+	for pass_kind in [["door", "window"], ["wall"], ["ceiling"], ["wall", "ceiling"]]:
+		for m in room_mounts:
+			if chosen.size() >= cracks.size() or not pass_kind.has(m.kind):
+				continue
+			if m.kind == "wall" and walls >= 2 and pass_kind.size() == 1:
+				continue
+			if m.kind == "ceiling" and ceilings >= 1 and pass_kind.size() == 1:
+				continue
+			var too_close := false
+			for c in chosen:
+				if c.origin.distance_to(m.origin) < 1.0:
+					too_close = true
+			if too_close or chosen.has(m):
+				continue
+			chosen.append(m)
+			if m.kind == "wall":
+				walls += 1
+			elif m.kind == "ceiling":
+				ceilings += 1
+	for i in range(cracks.size()):
+		if i < chosen.size():
+			var m: Dictionary = chosen[i]
+			var origin: Vector3 = m.origin if m.kind == "ceiling" else Vector3(m.origin.x, floor_offset, m.origin.z)
+			var hint := Vector3.UP
+			if m.kind == "ceiling":
+				hint = head.global_position - origin
+				hint.y = 0.0
+				hint = hint.normalized() if hint.length() > 0.01 else Vector3.FORWARD
+			cracks[i].mount(origin, m.normal, hint)
+		else:
+			cracks[i].global_position = Vector3(0, -50, 0)
 
 
+## No room data: cracks open on an estimated ceiling above the player
+## (never floating mid-room). B/Y re-centres them on the current gaze.
 func apply_fallback_layout() -> void:
 	var forward := -head.global_basis.z
 	forward.y = 0.0
@@ -103,7 +128,8 @@ func apply_fallback_layout() -> void:
 	var feet := feet_local()
 	for i in range(cracks.size()):
 		var direction := forward.rotated(Vector3.UP, deg_to_rad(FALLBACK_ANGLES[i]))
-		cracks[i].mount(to_global(feet + direction * FALLBACK_DISTANCE), -direction)
+		var point := to_global(feet + direction * FALLBACK_DISTANCE + Vector3(0, FALLBACK_CEILING, 0))
+		cracks[i].mount(point, Vector3.DOWN, -direction)
 
 
 func active_cracks() -> Array:
