@@ -77,6 +77,17 @@ var _history_timer: float = 0.0
 var _burst: Array[MeshInstance3D] = []
 var _shock: MeshInstance3D
 var _roll_angle: float = 0.0
+var _fur: Array[MeshInstance3D] = []
+var _ears: Array[Node3D] = []
+var _feet: Array[Node3D] = []
+var _ear_swing: Vector2 = Vector2.ZERO
+var _ear_vel: Vector2 = Vector2.ZERO
+var _prev_vel: Vector3 = Vector3.ZERO
+var hp: int = 1
+var is_boss: bool = false
+var last_hit: String = "crush"
+var _homing: Node3D = null
+var _crown: Node3D = null
 
 
 static func create(spark_kind: String) -> Spark:
@@ -137,6 +148,23 @@ func _ready() -> void:
 	_shock.visible = false
 	_shock.top_level = true
 	add_child(_shock)
+	if is_boss:
+		_crown = UI.icon("crown", Neon.AMBER, radius * 1.1)
+		_crown.position = Vector3(0, radius * 1.6, 0)
+		add_child(_crown)
+
+
+## Turns this critter into the wave-5 boss: twice the size, much heavier,
+## takes several hits, wears a crown.
+func make_boss() -> void:
+	is_boss = true
+	hp = SparkMath.BOSS_HP
+	stats = stats.duplicate()
+	stats.radius = stats.radius * 2.3
+	stats.mass = maxf(stats.mass * 4.0, 5.0)
+	stats.speed = stats.speed * 0.7
+	stats.drain_time = stats.drain_time * 1.6
+	stats.dive = 7.0
 
 
 func configure(crack: Node3D, target_gem: Node3D, head: Node3D) -> void:
@@ -178,21 +206,79 @@ func is_roped() -> bool:
 	return not tethers.is_empty()
 
 
+## Applies one hit. Bosses (and only bosses) survive until their hp runs out.
+func hit(method: String) -> void:
+	if state == State.DEAD:
+		return
+	last_hit = method
+	_hit_flash = 1.0
+	if is_boss and hp > 1:
+		hp -= 1
+		if director:
+			director.call("on_boss_hurt", self)
+		for t in tethers.duplicate():
+			if is_instance_valid(t):
+				t.release()
+		state = State.STUN
+		_timer = 0.0
+		velocity = -velocity * 0.5 + Vector3(0, 1.0, 0)
+		_homing = null
+		return
+	_die()
+
+
 ## Crushed in a gauntlet fist.
 func crush() -> void:
-	if state != State.DEAD:
+	hit("crush")
+
+
+## A hand jerked back on the rope: light critters fly at the hand (and get
+## caught there); heavy ones and bosses just take a hit and stagger.
+func yank(hand_point: Node3D, strength: float) -> bool:
+	if state == State.DEAD:
+		return false
+	_hit_flash = 1.0
+	if has_shard:
+		has_shard = false
+		_shard.visible = false
+		shard_dropped.emit(self, global_position)
+	if kind == "splitter":
+		split.emit(self, global_position)
+		last_hit = "yank"
 		_die()
+		return false
+	if family == "snake" and segments_left > 3:
+		segments_left = maxi(0, segments_left - 3)
+		_rebuild_segments()
+	if is_boss or mass >= 3.0:
+		if is_boss:
+			hit("yank")
+		else:
+			state = State.STUN
+			_timer = 0.0
+			velocity += (hand_point.global_position - global_position).normalized() * 1.4
+			_flung = 0.4
+		return false
+	velocity = (hand_point.global_position - global_position).normalized() * (3.6 + strength * 2.2) + Vector3(0, 1.0, 0)
+	_flung = 1.2
+	_homing = hand_point
+	state = State.STUN
+	_timer = 0.0
+	return true
+
+
+func is_flying_to_hand() -> bool:
+	return _homing != null and _flung > 0.0 and state != State.DEAD
 
 
 ## Hit by a fast-moving hand: balls fly, everything else bursts.
 func punch(hand_velocity: Vector3) -> void:
 	if state == State.DEAD:
 		return
-	if family == "ball":
+	if family == "ball" and not is_boss:
 		fling(hand_velocity.normalized(), clampf(hand_velocity.length() / 3.0, 0.4, 1.0))
 	else:
-		_hit_flash = 1.0
-		_die()
+		hit("punch")
 
 
 ## Sling release: launched away; a fast ball bursts on walls or other balls.
@@ -287,6 +373,11 @@ func _physics_process(delta: float) -> void:
 				state = _dive_from
 				_timer = 0.0
 		State.STUN:
+			if _homing and is_instance_valid(_homing) and _flung > 0.0:
+				var want := (_homing.global_position - global_position).normalized() * maxf(velocity.length(), 4.0)
+				velocity = velocity.lerp(want, minf(1.0, delta * 7.0))
+			elif _homing and _flung <= 0.0:
+				_homing = null
 			if _flung <= 0.0:
 				velocity *= 1.0 - minf(1.0, delta * 3.0)
 				if not ground:
@@ -327,14 +418,15 @@ func _physics_process(delta: float) -> void:
 		var collider := hit.get_collider()
 		var impact := before.dot(-hit.get_normal())
 		if collider is Spark and family == "ball" and (_flung > 0.0 or collider._flung > 0.0) and impact > 1.5:
-			collider.call_deferred("_die")
-			_die()
+			collider.call_deferred("hit", "slam")
+			hit("slam")
 			return
-		if collider and collider.has_meta("labels") and (is_roped() or _flung > 0.0) and impact > SLAM_SPEED:
+		if collider and collider.has_meta("labels") and (is_roped() or _flung > 0.0) and impact > SLAM_SPEED and _homing == null:
 			if director:
 				director.call("cue", "thud", global_position, 4.0)
-			_die()
-			return
+			hit("slam")
+			if state == State.DEAD:
+				return
 		if family == "ball" and impact > 0.3 and collider is StaticBody3D:
 			velocity = before.bounce(hit.get_normal()) * 0.7
 	_animate(delta)
@@ -388,6 +480,10 @@ func _fly_toward(goal: Vector3, delta: float, factor: float, ignore_player: bool
 
 func _yanked(pull: Vector3) -> void:
 	_hit_flash = 1.0
+	if is_boss:
+		state = State.STUN
+		_timer = 0.0
+		return
 	if kind == "splitter" and state != State.STUN:
 		split.emit(self, global_position)
 		_die()
@@ -475,6 +571,8 @@ func _build_character() -> void:
 			stripe2.rotation_degrees.x = 90.0
 			_body.add_child(stripe2)
 		_:
+			if kind != "brute":
+				_add_puff_parts()
 			match kind:
 				"ember":
 					for i in range(4):
@@ -509,6 +607,33 @@ func _build_character() -> void:
 				_motes.append(mote)
 
 
+## Fuzzy puff body: fur shells, two springy ears and two little feet.
+func _add_puff_parts() -> void:
+	var fur_len := radius * 0.32
+	_fur = Neon.add_fur(_body, color, radius, fur_len, 6, 30.0 if radius > 0.1 else 22.0)
+	for i in range(2):
+		var side := -1.0 if i == 0 else 1.0
+		var ear_root := Node3D.new()
+		ear_root.position = Vector3(side * radius * 0.5, radius * 0.75, -radius * 0.1)
+		_body.add_child(ear_root)
+		var ear := Neon.make_lick(color, radius * 0.22, radius * 0.9)
+		ear.position = Vector3(0, radius * 0.4, 0)
+		ear.material_override = Neon.orb_material(color.lerp(Neon.WHITE, 0.25), Color(1, 0.95, 0.85), 4.0)
+		ear_root.add_child(ear)
+		var tipball := Neon.make_orb(Neon.WHITE.lerp(color, 0.3), radius * 0.12, 6, 3)
+		tipball.position = Vector3(0, radius * 0.9, 0)
+		ear_root.add_child(tipball)
+		ear_root.rotation_degrees.z = -side * 18.0
+		_ears.append(ear_root)
+		var foot := Neon.make_orb(color.darkened(0.35), radius * 0.26, 8, 4)
+		foot.scale = Vector3(1.0, 0.6, 1.3)
+		foot.position = Vector3(side * radius * 0.42, -radius * 0.95, radius * 0.1)
+		_body.add_child(foot)
+		_feet.append(foot)
+	# The living orb becomes the skin under the fur.
+	_core.scale = Vector3.ONE * 0.97
+
+
 func _rebuild_segments() -> void:
 	for seg in _segments:
 		seg.queue_free()
@@ -524,7 +649,12 @@ func _rebuild_segments() -> void:
 func _animate_character(delta: float) -> void:
 	var flat_speed := velocity.length()
 	if flat_speed > 0.15:
-		var target := Basis.looking_at(velocity.normalized(), Vector3.UP, true)
+		var facing := velocity.normalized()
+		if absf(facing.y) > 0.97:
+			facing = (facing + _body_rot.z * 0.2).normalized()
+			if absf(facing.y) > 0.97:
+				facing = Vector3(0.01, 0, 1)
+		var target := Basis.looking_at(facing, Vector3.UP, true)
 		if family == "drone":
 			# Bank into the motion.
 			var local := _body_rot.inverse() * velocity
@@ -584,6 +714,24 @@ func _animate_character(delta: float) -> void:
 			_segments[i].scale = Vector3.ONE * (1.0 + sin(_life * 6.0 - i * 0.6) * 0.08)
 			(_segments[i].material_override as ShaderMaterial).set_shader_parameter("heat", _hit_flash)
 	(_core.material_override as ShaderMaterial).set_shader_parameter("heat", _hit_flash + (0.35 if state == State.STUN else 0.0))
+	for f in _fur:
+		(f.material_override as ShaderMaterial).set_shader_parameter("heat", _hit_flash)
+	# Ears: a damped spring driven by acceleration (they flop when it turns or gets yanked).
+	if not _ears.is_empty():
+		var accel := (velocity - _prev_vel) / maxf(delta, 0.001)
+		var local := _body_rot.inverse() * accel
+		var force := Vector2(clampf(-local.z * 0.04, -1.5, 1.5), clampf(local.x * 0.04, -1.5, 1.5))
+		_ear_vel += (force - _ear_swing * 60.0 - _ear_vel * 7.0) * delta
+		_ear_swing += _ear_vel * delta * 10.0
+		_ear_swing = _ear_swing.clamp(Vector2(-0.9, -0.9), Vector2(0.9, 0.9))
+		for i in range(_ears.size()):
+			var side := -1.0 if i == 0 else 1.0
+			_ears[i].rotation = Vector3(_ear_swing.x, 0.0, deg_to_rad(-side * 18.0) + _ear_swing.y + sin(_life * 3.0 + i) * 0.05)
+	_prev_vel = velocity
+	for i in range(_feet.size()):
+		var paddle := sin(_life * 14.0 + i * PI) * clampf(velocity.length() / maxf(speed, 0.1), 0.0, 1.0)
+		_feet[i].position.z = radius * 0.1 + paddle * radius * 0.25
+		_feet[i].position.y = -radius * 0.95 + maxf(0.0, -paddle) * radius * 0.12
 
 
 func _animate(delta: float) -> void:
@@ -606,6 +754,11 @@ func _animate(delta: float) -> void:
 		return
 	_animate_character(delta)
 	_inner.scale = Vector3.ONE * (1.0 + sin(_life * 9.0) * 0.15)
+	if _crown:
+		_crown.position = Vector3(0, radius * 1.6 + sin(_life * 3.0) * 0.02, 0)
+		var cam := get_viewport().get_camera_3d()
+		if cam:
+			_crown.look_at(cam.global_position, Vector3.UP, true)
 	var glow := color if not is_roped() else TetherMath.rope_color(_tension)
 	Neon.set_halo_color(_halo, glow, 0.3 + _hit_flash * 0.5 + _tension * 0.3 + (0.2 if state == State.STUN else 0.0))
 	_shard.position = Vector3(0, radius * 1.4, 0)

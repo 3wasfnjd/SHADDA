@@ -468,3 +468,67 @@ static func make_ring_mesh(color: Color, radius: float, thickness: float) -> Mes
 	mi.material_override = emitter_material(color)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
+
+
+## Fur: a stack of shells around a sphere; each shell discards most of its
+## pixels by a stable per-strand hash, thinner toward the tips. Cheap enough
+## for a handful of critters on Quest (6 shells x 256 triangles each).
+const FUR_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_back, shadows_disabled;
+uniform vec4 base : source_color = vec4(1.0, 0.42, 0.06, 1.0);
+uniform vec4 tip : source_color = vec4(1.0, 0.85, 0.6, 1.0);
+uniform float layer = 0.0;
+uniform float fur_length = 0.03;
+uniform float density = 38.0;
+uniform float heat = 0.0;
+varying vec3 obj;
+float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+void vertex() {
+	obj = VERTEX;
+	VERTEX += NORMAL * layer * fur_length;
+	VERTEX.y -= layer * layer * fur_length * 0.35;
+}
+void fragment() {
+	vec3 dir = normalize(obj);
+	vec3 cell = floor(dir * density);
+	float n = hash(cell);
+	vec3 local = fract(dir * density) - 0.5;
+	float strand = 1.0 - length(local) * 2.0;
+	if (layer > 0.01 && (n < layer * 0.85 || strand < layer * 0.7)) { discard; }
+	float facing = clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0);
+	vec3 col = mix(base.rgb * 0.55, tip.rgb, layer);
+	col += base.rgb * pow(1.0 - facing, 2.0) * 0.8;
+	ALBEDO = mix(col, vec3(1.0), heat * 0.6);
+}
+"""
+
+static var _fur_shader: Shader
+
+
+## Adds `shells` fur layers as children of `parent`, sized to `radius`.
+static func add_fur(parent: Node3D, color: Color, radius: float, fur_length: float, shells: int = 6, density: float = 38.0) -> Array[MeshInstance3D]:
+	if _fur_shader == null:
+		_fur_shader = Shader.new()
+		_fur_shader.code = FUR_SHADER
+	var out: Array[MeshInstance3D] = []
+	var sphere := SphereMesh.new()
+	sphere.radius = radius
+	sphere.height = radius * 2.0
+	sphere.radial_segments = 16
+	sphere.rings = 8
+	for i in range(shells):
+		var m := ShaderMaterial.new()
+		m.shader = _fur_shader
+		m.set_shader_parameter("base", color)
+		m.set_shader_parameter("tip", color.lerp(Color(1, 1, 1), 0.55))
+		m.set_shader_parameter("layer", float(i + 1) / float(shells))
+		m.set_shader_parameter("fur_length", fur_length)
+		m.set_shader_parameter("density", density)
+		var mi := MeshInstance3D.new()
+		mi.mesh = sphere
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(mi)
+		out.append(mi)
+	return out

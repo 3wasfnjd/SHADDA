@@ -28,22 +28,25 @@ func _run() -> void:
 		{"origin": Vector3(2.0, 0, 0), "normal": Vector3(-1, 0, 0), "width": 3.0, "height": 2.5, "kind": "wall"},
 	]
 	director.on_room_ready(mounts, 0.02, true)
-	assert(director.phase == HuntDirector.Phase.PLACING and director.active_cracks().size() == 2)
+	assert(director.phase == HuntDirector.Phase.MENU and director.active_cracks().size() == 2)
+	director.on_button(&"ax_button", 1)
+	assert(director.phase == HuntDirector.Phase.PLACING)
 	assert(director.cracks[0].spawn_point().z > -2.5, "crack spawns on the room side of the door")
 	for i in range(30):
 		await process_frame
 	var d := Vector2(director.gem.global_position.x, director.gem.global_position.z).length()
 	assert(d >= 1.0 and d <= 3.0, "gem hovers at %0.2f m" % d)
+	director._phase_time = 1.0
 	director.on_button(&"ax_button", 1)
 	assert(director.phase == HuntDirector.Phase.PLAYING and not director.gem.placing)
-	director.next_spawn = 0.0
-	director.match_time = HuntDirector.START_DELAY + 0.1
-	await physics_frame
-	await physics_frame
+	assert(director.cracks[0].is_open(), "wave one opened a breach")
+	director._next_spawn = 0.0
+	await process_frame
+	await process_frame
+	director.auto_spawn = false
 	assert(director.sparks.size() == 1, "first spark spawned: %d" % director.sparks.size())
 	var spark: Spark = director.sparks[0]
 	assert(spark.kind == "ember")
-	assert(director.cracks[0].is_open(), "its crack opened")
 	# Flies to the gem and starts draining.
 	for i in range(900):
 		await physics_frame
@@ -87,6 +90,7 @@ func _run() -> void:
 	assert(spark.state == Spark.State.DEAD, "crushed")
 	await physics_frame
 	assert(director.kills == 1 and director.sparks.is_empty())
+	assert(director.score > 0, "crushing scored points")
 	# Splitter yank → two motes.
 	var splitter := director._spawn("splitter")
 	splitter.state = Spark.State.APPROACH
@@ -111,11 +115,11 @@ func _run() -> void:
 	# Loss and replay.
 	director.gem.energy = 0.0
 	director._check_end()
-	assert(director.phase == HuntDirector.Phase.ENDED and not director.gem.alive)
-	director._end_timer = 2.0
+	assert(director.phase == HuntDirector.Phase.RESULTS and not director.gem.alive and director.stars_won == 0)
+	director._results_reveal = 2.0
 	director.on_button(&"ax_button", 1)
 	assert(director.phase == HuntDirector.Phase.PLACING and director.gem.placing and director.sparks.is_empty())
-	print("PASS: hunt smoke — mounts, placement, spawn, drain, rope, yank, crush, split, loss, replay")
+	print("PASS: hunt smoke — mounts, placement, spawn, drain, rope, yank, crush, split, loss, results, replay")
 	quit(0)
 
 

@@ -141,7 +141,7 @@ func _process(delta: float) -> void:
 		director.build(head, gauntlets)
 		director.visible = true
 		if preview:
-			director.on_room_ready([], 0.0, false)
+			director.on_room_ready(_preview_room(), 0.0, true)
 		else:
 			room_scan = RoomScan.new()
 			add_child(room_scan)
@@ -183,34 +183,57 @@ func _recenter() -> void:
 	studio.look_at(head.global_position, Vector3.UP, true)
 
 
-## Scripted desktop demo: place the gem, let a spark emerge, rope it and reel.
+## Scripted desktop demo: menu → place the gem → breaches open in fake walls →
+## a critter emerges, gets roped and reeled → results screen.
 func _preview_input(delta: float, triggers: Array, grips: Array) -> void:
 	preview_time += delta
-	if preview_time > 0.6 and director.phase == HuntDirector.Phase.PLACING:
-		var wanted := OS.get_environment("SHARARA_PREVIEW_MODE")
-		if wanted != "":
-			director.set_mode(wanted)
-		director.on_button(&"ax_button", 1)
-		director.next_spawn = 0.0
-	if not director.sparks.is_empty() and is_instance_valid(director.sparks[0]):
+	match director.phase:
+		HuntDirector.Phase.MENU:
+			head.rotation_degrees.x = -6.0
+			var wanted := OS.get_environment("SHARARA_PREVIEW_MODE")
+			if wanted != "":
+				director.set_mode(wanted)
+			if preview_time > 0.8:
+				director.on_button(&"ax_button", 1)
+		HuntDirector.Phase.PLACING:
+			head.rotation_degrees.x = -30.0
+			if preview_time > 1.3:
+				director.on_button(&"ax_button", 1)
+				director._next_spawn = director._phase_time + 0.6
+		HuntDirector.Phase.PLAYING:
+			head.rotation_degrees.x = -4.0 if preview_time < 2.4 else -18.0
+			if preview_time > 6.0:
+				director._end(true)
+	if director.phase == HuntDirector.Phase.PLAYING and not director.sparks.is_empty() and is_instance_valid(director.sparks[0]):
 		var target: Vector3 = director.sparks[0].global_position
 		if target.distance_to(controllers[1].global_position) > 0.2:
 			controllers[1].look_at(target, Vector3.UP)
 			aim_controllers[1].global_transform = controllers[1].global_transform
-	if preview_time > 3.2:
-		triggers[1] = 1.0
-	if preview_time > 3.8:
-		grips[1] = 1.0
-	var shots := [[0.4, "placing"], [2.4, "spark"], [3.6, "rope"], [4.6, "pull"]]
+		if preview_time > 3.9:
+			triggers[1] = 1.0
+		if preview_time > 4.5:
+			grips[1] = 1.0
+	var shots := [[0.5, "menu"], [1.1, "placing"], [2.2, "breach"], [3.6, "spark"], [4.3, "rope"], [5.4, "pull"], [7.8, "results"]]
 	if preview_shots < shots.size() and preview_time >= shots[preview_shots][0]:
+		var shot_name: String = shots[preview_shots][1]
+		preview_shots += 1
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("res://build/previews")
-		get_viewport().get_texture().get_image().save_png("res://build/previews/%s.png" % shots[preview_shots][1])
+		get_viewport().get_texture().get_image().save_png("res://build/previews/%s.png" % shot_name)
 		var right := gauntlets[1]
-		print("preview shot %s: phase=%d tether=%d tension=%0.2f sparks=%d" % [shots[preview_shots][1], director.phase, right.tether.state, right.tether.tension, director.sparks.size()])
-		preview_shots += 1
+		print("preview shot %s: phase=%d wave=%d score=%d tether=%d sparks=%d" % [shot_name, director.phase, director.wave, director.score, right.tether.state, director.sparks.size()])
 		if preview_shots >= shots.size():
 			get_tree().quit()
+
+
+## Fake room for the desktop preview: a wall ahead, a wall to the right, a ceiling.
+func _preview_room() -> Array:
+	return [
+		{"origin": Vector3(0.3, 0, -2.8), "normal": Vector3(0, 0, 1), "width": 3.0, "height": 2.5, "kind": "wall"},
+		{"origin": Vector3(2.3, 0, -1.0), "normal": Vector3(-1, 0, 0), "width": 3.0, "height": 2.5, "kind": "wall"},
+		{"origin": Vector3(-0.9, 2.5, -1.6), "normal": Vector3.DOWN, "width": 2.0, "height": 0.0, "kind": "ceiling"},
+		{"origin": Vector3(-2.3, 0, -0.6), "normal": Vector3(1, 0, 0), "width": 3.0, "height": 2.5, "kind": "wall"},
+	]
 
 
 func _stop(message: String) -> void:

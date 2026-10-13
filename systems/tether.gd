@@ -90,6 +90,11 @@ func fire(direction: Vector3, targets: Array, aim_from: Vector3 = Vector3.INF) -
 	return hit
 
 
+## What a shot fired now would hit (for the lock-on reticle).
+func peek_target(aim_from: Vector3, direction: Vector3, targets: Array) -> Node3D:
+	return _find_target(aim_from, direction.normalized(), targets)
+
+
 func _find_target(from: Vector3, direction: Vector3, targets: Array) -> Node3D:
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from, from + direction * RANGE, 2)

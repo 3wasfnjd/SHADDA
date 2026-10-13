@@ -39,6 +39,13 @@ var _finger_meshes: Array[ImmediateMesh] = []
 var _prev_pos: Vector3 = Vector3.INF
 var hand_velocity: Vector3 = Vector3.ZERO
 var _stunned: float = 0.0
+var _reticle: Node3D
+var _reticle_ring: MeshInstance3D
+var _reticle_target: Node3D = null
+var _yank_cooldown: float = 0.0
+var _sight: MeshInstance3D
+var _sight_mesh := ImmediateMesh.new()
+var _sight_mat: ShaderMaterial
 var _pulse: float = 0.0
 var _fingers: Array[MeshInstance3D] = []
 
@@ -92,6 +99,27 @@ func _ready() -> void:
 	_guide.extra_cull_margin = 16.0
 	add_child(_guide)
 	_build_hand(0.0)
+	# Lock-on reticle: a spinning bracket ring that snaps onto the target.
+	_reticle = Node3D.new()
+	_reticle.top_level = true
+	add_child(_reticle)
+	_reticle_ring = Neon.make_ring_mesh(Neon.CYAN, 0.12, 0.006)
+	_reticle_ring.rotation_degrees.x = 90.0
+	_reticle.add_child(_reticle_ring)
+	for i in range(4):
+		var tick := Neon.make_orb(Neon.WHITE, 0.012, 6, 3)
+		tick.position = Vector3(cos(i * PI * 0.5), sin(i * PI * 0.5), 0) * 0.15
+		_reticle.add_child(tick)
+	_reticle.visible = false
+	# Aim sight: a thin beam from the emitter out to the target (or 2.5 m).
+	_sight_mat = Neon.glow_material(Neon.CYAN, true)
+	_sight = MeshInstance3D.new()
+	_sight.mesh = _sight_mesh
+	_sight.material_override = _sight_mat
+	_sight.top_level = true
+	_sight.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_sight.extra_cull_margin = 16.0
+	add_child(_sight)
 
 
 ## Wrist ring + knuckle bar, built in local space. `squeeze` 0..1 tightens the ring.
@@ -186,12 +214,19 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 		_try_punch(targets)
 	elif tether.is_busy():
 		tether.release()
-	if not allow_play and trigger_down and not _trigger_was_down and director and director.has_method("aim_select"):
-		if director.call("aim_select", aim_origin(), aim_direction()):
+	if not allow_play and director and director.has_method("aim_select"):
+		director.call("aim_hover", index, aim_origin(), aim_direction())
+		if trigger_down and not _trigger_was_down and director.call("aim_select", aim_origin(), aim_direction()):
 			_haptic(0.4, 0.06)
 	_trigger_was_down = trigger_down
 	_grip_was_down = grip_down
 	tether.update(delta, grip)
+	_yank_cooldown = maxf(0.0, _yank_cooldown - delta)
+	if allow_play and tether.state == Tether.State.ATTACHED:
+		_try_yank()
+	if allow_play:
+		_try_catch(targets)
+	_update_reticle(delta, targets, allow_play)
 	if tether.state == Tether.State.ATTACHED:
 		if _light == Light.READY or _light == Light.RELEASE:
 			_cue("attach")
@@ -215,7 +250,66 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 			set_light(Light.READY)
 	_build_hand(grip)
 	_apply_light(delta)
-	_draw_guide(not tether.is_busy() and trigger > 0.08 and _stunned <= 0.0)
+	_guide.visible = false
+
+
+## Jerk the hand back while roped: the critter flies at you.
+func _try_yank() -> void:
+	var t := tether.target
+	if t == null or not t.has_method("yank") or _yank_cooldown > 0.0:
+		return
+	var to_hand: Vector3 = (hand_position() - t.global_position).normalized()
+	var pull_speed := hand_velocity.dot(to_hand)
+	if pull_speed > 1.5:
+		_yank_cooldown = 0.5
+		var flew: bool = t.yank(tether_origin, clampf((pull_speed - 1.5) / 2.0, 0.0, 1.0))
+		_haptic(0.9, 0.12)
+		_cue("snap")
+		if flew:
+			tether.rest_length = TetherMath.MIN_REST
+
+
+## A critter that flew into the hand is caught and bursts there.
+func _try_catch(targets: Array) -> void:
+	var hand := hand_position()
+	for t in targets:
+		if not is_instance_valid(t) or not t.has_method("is_flying_to_hand") or not t.is_flying_to_hand():
+			continue
+		if t.global_position.distance_to(hand) < 0.32:
+			if tether.target == t:
+				tether.release()
+			_haptic(1.0, 0.2)
+			_cue("capture")
+			t.hit("catch")
+			pulse(1.0)
+			return
+
+
+func _update_reticle(delta: float, targets: Array, allow_play: bool) -> void:
+	var show_sight := _stunned <= 0.0 and not tether.is_busy()
+	var target: Node3D = null
+	if allow_play and show_sight:
+		target = tether.peek_target(aim_origin(), aim_direction(), targets)
+	_reticle_target = target
+	_reticle.visible = target != null
+	if target:
+		var cam := get_viewport().get_camera_3d()
+		var r: float = target.radius if "radius" in target else 0.12
+		_reticle.global_position = target.global_position
+		if cam:
+			_reticle.look_at(cam.global_position, Vector3.UP, true)
+		_reticle.scale = Vector3.ONE * (r / 0.12 + 0.3) * (1.0 + sin(_time * 10.0) * 0.06)
+		_reticle_ring.rotation.y += delta * 3.0
+		(_reticle_ring.material_override as StandardMaterial3D).albedo_color = Neon.AMBER.lerp(Neon.WHITE, 0.3 + 0.3 * sin(_time * 12.0))
+	# Sight beam.
+	_sight.visible = show_sight and (allow_play or (director and director.call("in_menu")))
+	if _sight.visible:
+		var from := tether_origin.global_position
+		var to := (target.global_position if target else aim_origin() + aim_direction() * 2.5)
+		var pts := PackedVector3Array([from, from.lerp(to, 0.5), to])
+		Neon.build_tube(_sight_mesh, pts, func(_t): return 0.0016)
+		_sight_mat.set_shader_parameter("tint", Neon.AMBER if target else Neon.CYAN)
+		_sight_mat.set_shader_parameter("alpha_scale", 0.55 if target else 0.25)
 
 
 ## A fast fist through a critter bursts it (or launches a ball).

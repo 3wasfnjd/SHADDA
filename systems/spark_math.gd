@@ -121,3 +121,76 @@ static func energy_rate(draining: int) -> float:
 
 
 const SHARD_LOSS := 0.12
+
+
+# --- waves, scoring, stars -----------------------------------------------------
+
+## Five waves per mode. `mix` weights the mode's [basic, fast, splitter, heavy].
+const WAVES := [
+	{"count": 4, "alive": 2, "gap": 3.0, "mix": [1.0, 0.0, 0.0, 0.0], "cracks": 1, "boss": false},
+	{"count": 6, "alive": 3, "gap": 2.5, "mix": [1.0, 0.8, 0.0, 0.0], "cracks": 2, "boss": false},
+	{"count": 8, "alive": 3, "gap": 2.1, "mix": [1.0, 0.8, 0.7, 0.0], "cracks": 3, "boss": false},
+	{"count": 10, "alive": 4, "gap": 1.8, "mix": [1.0, 0.9, 0.6, 0.5], "cracks": 4, "boss": false},
+	{"count": 6, "alive": 4, "gap": 2.6, "mix": [1.0, 1.0, 0.4, 0.3], "cracks": 4, "boss": true},
+]
+const WAVE_BREAK := 4.0
+const BOSS_HP := 6
+const COMBO_WINDOW := 2.5
+
+
+static func wave_pick(wave: int, roll: float, mode: String) -> String:
+	var kinds := mode_kinds(mode)
+	var mix: Array = WAVES[clampi(wave, 0, WAVES.size() - 1)]["mix"]
+	var total := 0.0
+	for i in range(4):
+		if kinds[i] != "":
+			total += mix[i]
+	var r := roll * total
+	for i in range(4):
+		if kinds[i] == "":
+			continue
+		r -= mix[i]
+		if r <= 0.0:
+			return kinds[i]
+	return kinds[0]
+
+
+static func base_points(kind: String, boss: bool = false) -> int:
+	if boss:
+		return 2500
+	var s := stats(kind)
+	if kind == "mote":
+		return 50
+	if s.mass >= 3.0:
+		return 300
+	if s.speed >= 2.2:
+		return 150
+	return 100
+
+
+## How a critter was finished changes the score.
+static func method_bonus(method: String) -> float:
+	match method:
+		"catch":
+			return 1.5
+		"slam":
+			return 1.5
+		"punch":
+			return 1.25
+		_:
+			return 1.0
+
+
+static func combo_multiplier(combo: int) -> float:
+	return minf(1.0 + maxf(0.0, combo - 1) * 0.25, 3.0)
+
+
+## 0 = lost; 1-3 by how much of the gem survived.
+static func stars_for(won: bool, energy: float) -> int:
+	if not won:
+		return 0
+	if energy >= 0.8:
+		return 3
+	if energy >= 0.5:
+		return 2
+	return 1
