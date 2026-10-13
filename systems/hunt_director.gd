@@ -30,6 +30,8 @@ var kills: int = 0
 var survived: bool = false
 var mode: String = "sparks"
 var _mascot: Spark = null
+var _mascots: Array = []
+var _picker_anchor: Transform3D = Transform3D.IDENTITY
 var _mode_cooldown: float = 0.0
 var combo: int = 0
 var _combo_timer: float = 0.0
@@ -81,6 +83,8 @@ func on_room_ready(mounts: Array, floor_y: float, found: bool) -> void:
 	else:
 		apply_fallback_layout()
 	phase = Phase.PLACING
+	set_mode(mode)
+	anchor_picker()
 
 
 ## Doors and windows first, then at most two walls, then one ceiling point,
@@ -165,12 +169,78 @@ func cycle_mode(axis: float, delta: float) -> void:
 
 func set_mode(new_mode: String) -> void:
 	mode = new_mode
-	if _mascot and is_instance_valid(_mascot):
-		_mascot.queue_free()
-	_mascot = Spark.create(SparkMath.mode_kinds(mode)[0])
-	_mascot.preview_only = true
-	add_child(_mascot)
-	_mascot.player_head = head
+	_ensure_picker()
+	_mascot = _mascots[SparkMath.MODES.find(mode)]
+
+
+## Four mascots hang in an arc in front of the player while placing: one per
+## mode. Aim at one and pull the trigger (or flick the left stick) to choose.
+func _ensure_picker() -> void:
+	if not _mascots.is_empty():
+		return
+	for m in SparkMath.MODES:
+		var mascot := Spark.create(SparkMath.mode_kinds(m)[0])
+		mascot.preview_only = true
+		add_child(mascot)
+		mascot.player_head = head
+		_mascots.append(mascot)
+	anchor_picker()
+
+
+func anchor_picker() -> void:
+	var forward := -head.global_basis.z
+	forward.y = 0.0
+	forward = forward.normalized() if forward.length() > 0.01 else Vector3.FORWARD
+	_picker_anchor = Transform3D(Basis.looking_at(forward, Vector3.UP), head.global_position + forward * 1.4 + Vector3(0, -0.25, 0))
+
+
+func _update_picker(delta: float) -> void:
+	if _mascots.is_empty():
+		return
+	var t := Time.get_ticks_msec() / 1000.0
+	for i in range(_mascots.size()):
+		var mascot: Spark = _mascots[i]
+		if not is_instance_valid(mascot):
+			continue
+		var x := (i - 1.5) * 0.42
+		var local := Vector3(x, sin(t * 1.6 + i) * 0.04, -0.12 * absf(i - 1.5))
+		var selected: bool = SparkMath.MODES[i] == mode
+		mascot.global_position = _picker_anchor * local
+		mascot.velocity = Vector3(0, 0, 0)
+		mascot.scale = mascot.scale.lerp(Vector3.ONE * (1.45 if selected else 0.8), minf(1.0, delta * 8.0))
+		mascot.visible = phase == Phase.PLACING
+		mascot._hit_flash = 0.35 if selected else 0.0
+
+
+## Trigger pull while placing: pick the mascot closest to the aim ray.
+func aim_select(origin: Vector3, direction: Vector3) -> bool:
+	if phase != Phase.PLACING:
+		return false
+	var best := -1
+	var best_d := 0.28
+	for i in range(_mascots.size()):
+		var p: Vector3 = _mascots[i].global_position
+		var along := (p - origin).dot(direction)
+		if along < 0.2:
+			continue
+		var d := (origin + direction * along).distance_to(p)
+		if d < best_d:
+			best_d = d
+			best = i
+	if best < 0:
+		return false
+	if SparkMath.MODES[best] != mode:
+		set_mode(SparkMath.MODES[best])
+		cue("attach", _mascots[best].global_position)
+	return true
+
+
+func _clear_picker() -> void:
+	for m in _mascots:
+		if is_instance_valid(m):
+			m.queue_free()
+	_mascots.clear()
+	_mascot = null
 
 
 func adjust_floor(axis: float, delta: float) -> float:
@@ -197,8 +267,10 @@ func on_button(action: StringName, hand_index: int) -> void:
 			Phase.PLAYING:
 				if hand_index < gauntlets.size():
 					gauntlets[hand_index].release_everything()
-	elif action == &"by_button" and phase == Phase.PLACING and not room_found:
-		apply_fallback_layout()
+	elif action == &"by_button" and phase == Phase.PLACING:
+		anchor_picker()
+		if not room_found:
+			apply_fallback_layout()
 
 
 func _place_and_start() -> void:
@@ -206,9 +278,7 @@ func _place_and_start() -> void:
 	cue("gem_place", gem.global_position)
 	for g in gauntlets:
 		g.release_everything()
-	if _mascot and is_instance_valid(_mascot):
-		_mascot.queue_free()
-		_mascot = null
+	_clear_picker()
 	match_time = 0.0
 	combo = 0
 	next_spawn = START_DELAY + SparkMath.FIRST_SPAWN
@@ -226,6 +296,8 @@ func _reset_for_placement() -> void:
 		c.close()
 	gem.begin_placement()
 	phase = Phase.PLACING
+	set_mode(mode)
+	anchor_picker()
 
 
 func _process(delta: float) -> void:
@@ -263,11 +335,9 @@ func _update_gaze_placement(delta: float) -> void:
 		away = away.normalized() * clampf(d, 1.0, 3.0)
 	_gaze_point = _gaze_point.lerp(feet + away, minf(1.0, delta * 6.0))
 	gem.global_position = _gaze_point
-	if _mascot == null or not is_instance_valid(_mascot):
+	if _mascots.is_empty():
 		set_mode(mode)
-	var t := Time.get_ticks_msec() / 1000.0
-	_mascot.global_position = gem.anchor_point() + Vector3(cos(t * 1.2) * 0.35, 0.45 + sin(t * 2.0) * 0.06, sin(t * 1.2) * 0.35)
-	_mascot.velocity = Vector3(-sin(t * 1.2), 0.0, cos(t * 1.2)) * 0.42
+	_update_picker(delta)
 
 
 func _spawning(delta: float) -> void:

@@ -186,6 +186,9 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 		_try_punch(targets)
 	elif tether.is_busy():
 		tether.release()
+	if not allow_play and trigger_down and not _trigger_was_down and director and director.has_method("aim_select"):
+		if director.call("aim_select", aim_origin(), aim_direction()):
+			_haptic(0.4, 0.06)
 	_trigger_was_down = trigger_down
 	_grip_was_down = grip_down
 	tether.update(delta, grip)
@@ -212,7 +215,7 @@ func update(delta: float, trigger_value: float, grip_value: float, targets: Arra
 			set_light(Light.READY)
 	_build_hand(grip)
 	_apply_light(delta)
-	_draw_guide(allow_play and not tether.is_busy() and trigger > 0.08)
+	_draw_guide(not tether.is_busy() and trigger > 0.08 and _stunned <= 0.0)
 
 
 ## A fast fist through a critter bursts it (or launches a ball).

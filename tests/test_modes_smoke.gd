@@ -32,7 +32,14 @@ func _run() -> void:
 	# Mode cycling with the stick shows a mascot and never floats mid-room.
 	for i in range(5):
 		await process_frame
-	assert(director.mode == "sparks" and director._mascot != null and director._mascot.preview_only)
+	assert(director.mode == "sparks" and director._mascots.size() == 4 and director._mascot.preview_only)
+	# Aim at the third mascot (drones) and "pull the trigger".
+	var target: Vector3 = director._mascots[2].global_position
+	var from := head.global_position
+	assert(director.aim_select(from, (target - from).normalized()), "aim picks a mascot")
+	assert(director.mode == "drones")
+	assert(not director.aim_select(from, Vector3.UP), "aiming at nothing changes nothing")
+	director.set_mode("sparks")
 	director.cycle_mode(1.0, 0.1)
 	assert(director.mode == "snakes")
 	director.cycle_mode(1.0, 0.1)
@@ -42,7 +49,7 @@ func _run() -> void:
 	assert(director.mode == "sparks")
 	director.set_mode("snakes")
 	director.on_button(&"ax_button", 1)
-	assert(director.phase == HuntDirector.Phase.PLAYING and director._mascot == null)
+	assert(director.phase == HuntDirector.Phase.PLAYING and director._mascots.is_empty())
 	var right := hands[1]
 	# --- snake ---
 	var snake := director._spawn("snake")
