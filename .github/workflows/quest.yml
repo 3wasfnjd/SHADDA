@@ -1,13 +1,13 @@
-name: SHARARA Quest APK
+name: QALAM Quest APK
 on:
   push:
-    branches: ['sharara/**']
+    branches: ['qalam/**']
     paths-ignore: ['docs/**', 'assets/models/original/**']
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: sharara-${{ github.ref }}
+  group: qalam-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   apk:
@@ -46,49 +46,40 @@ jobs:
         run: godot --headless --xr-mode off --path . --script tests/test_meta_extension.gd
       - name: Test intro timing and focus interruption
         run: godot --headless --xr-mode off --path . --script tests/test_intro.gd
-      - name: Test rope arithmetic
-        run: godot --headless --xr-mode off --path . --script tests/test_tether_math.gd
-      - name: Test spark pressure curve and tuning
-        run: godot --headless --xr-mode off --path . --script tests/test_spark_math.gd
-      - name: Test full hunt loop headless (place, spawn, drain, rope, yank, crush, split, lose, replay)
-        run: godot --headless --xr-mode off --path . --script tests/test_scene_smoke.gd
-      - name: Test the other modes headless (snakes, drones, sling, punch, bite)
-        run: godot --headless --xr-mode off --path . --script tests/test_modes_smoke.gd
-      - name: Test a full match headless (menu, 5 waves, boss, results, save)
-        run: godot --headless --xr-mode off --path . --script tests/test_match_flow.gd
+      - name: Test page one headless (collision, strokes, ink, respawn, full solve, replay)
+        run: godot --headless --xr-mode off --audio-driver Dummy --path . --script tests/test_page.gd
       - name: Capture in-engine desktop previews (not a Quest capture)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libgl1-mesa-dri
           timeout 150 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility -- --preview
-          mkdir -p build/previews/sparks; mv build/previews/*.png build/previews/sparks/
-          for m in snakes drones sling; do mkdir -p build/previews/$m; SHARARA_PREVIEW_MODE=$m timeout 150 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility -- --preview; mv build/previews/*.png build/previews/$m/ 2>/dev/null || true; done
+          timeout 60 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility --script tests/preview_faces.gd
           ls -l build/previews
       - name: Export native ARM64 Android APK
-        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SHARARA-Quest-AR-v0.1.0.apk
+        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/QALAM-Quest-AR-v0.1.0.apk
       - name: Verify manifest, ABI, splash, and certificate
         run: python3 tools/verify_apk.py
       - name: Publish package report as a check annotation
         run: |
           echo "::notice title=package-report::$(python3 -c 'import json;print(json.dumps(json.load(open("build/package-report.json"))))')"
-          echo "::notice title=apk-sha256::$(cat build/SHARARA-Quest-AR-v0.1.0.apk.sha256)"
+          echo "::notice title=apk-sha256::$(cat build/QALAM-Quest-AR-v0.1.0.apk.sha256)"
       - name: Publish APK as a GitHub pre-release (direct download, GitHub only — never Meta)
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="sharara-v0.1.0"
+          TAG="qalam-v0.1.0"
           NOTES="بناء آلي من ${GITHUB_SHA}. تم البناء وفحص الحزمة ونجاح الاختبارات الآلية فقط؛ لم يُثبّت أو يُختبر على Quest. توقيع تطويري."
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes "$NOTES" --prerelease
           else
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "SHARARA v0.1.0 — اختبار" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "القلم QALAM v0.1.0 — تجربة اللعب" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
           fi
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/SHARARA-Quest-AR-v0.1.0.apk build/SHARARA-Quest-AR-v0.1.0.apk.sha256 build/package-report.json build/versions.txt
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/QALAM-Quest-AR-v0.1.0.apk build/QALAM-Quest-AR-v0.1.0.apk.sha256 build/package-report.json build/versions.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: SHARARA-Quest-AR-v0.1.0-stage-c
+          name: QALAM-Quest-AR-v0.1.0-build
           path: build/
           if-no-files-found: error
           retention-days: 14
