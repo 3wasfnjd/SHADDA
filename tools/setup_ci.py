@@ -2,7 +2,7 @@ import hashlib, os, pathlib, shutil, urllib.request, zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-CACHE = pathlib.Path(os.environ.get('RUNNER_TEMP', '/tmp')) / 'shadda-deps'
+CACHE = pathlib.Path(os.environ.get('RUNNER_TEMP', '/tmp')) / 'saqr-deps'
 CACHE.mkdir(parents=True, exist_ok=True)
 VERSION = '4.7.2-stable'
 BASE = f'https://github.com/godotengine/godot-builds/releases/download/{VERSION}/'
@@ -90,5 +90,5 @@ with open(os.environ['GITHUB_PATH'],'a') as f:f.write(str(CACHE)+'\n')
 shutil.copy2(engine,CACHE/'godot')
 (ROOT/'build').mkdir(exist_ok=True)
 (ROOT/'build/.gdignore').write_text('')
-(ROOT/'build/versions.txt').write_text('SHARARA v0.1.0\nGodot 4.7.2-stable\nOpenXR Vendors 5.1.0-stable\nJDK 17\nSDK compile 36 / target 34 / min 29\nNDK 29.0.14206865\nMobile Vulkan\nDevelopment signature; not tested on Quest 3\n')
+(ROOT/'build/versions.txt').write_text('SAQR v0.1.0\nGodot 4.7.2-stable\nOpenXR Vendors 5.1.0-stable\nJDK 17\nSDK compile 36 / target 34 / min 29\nNDK 29.0.14206865\nMobile Vulkan\nDevelopment signature; not tested on Quest 3\n')
 print('Pinned Godot SHA-512 and official vendor SHA-256 verified')

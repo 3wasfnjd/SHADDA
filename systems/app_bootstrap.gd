@@ -1,7 +1,8 @@
 extends Node3D
-## Boot sequence: OpenXR + passthrough, studio intro, then hands the frame
-## loop to HuntDirector. Desktop "--preview" mode fakes the headset so CI can
-## render a flat screenshot (which proves nothing about the Quest itself).
+## Boot sequence: OpenXR + passthrough, studio intro, room scan, then the
+## battle. The right controller flies the jet; the left wrist wears the HUD.
+## Desktop "--preview" fakes the headset so CI can render flat screenshots
+## (which prove nothing about the Quest itself).
 
 const IntroClock = preload("res://systems/intro_clock.gd")
 
@@ -12,14 +13,16 @@ var head: XRCamera3D
 var studio: Sprite3D
 var controllers: Array[XRController3D] = []
 var aim_controllers: Array[XRController3D] = []
-var gauntlets: Array[Gauntlet] = []
-var director: HuntDirector
+var jet: PlayerJet
+var hud: WristHud
+var director: BattleDirector
 var room_scan: RoomScan
 var foreground: bool = true
 var positioned: bool = false
 var rendered: bool = false
 var failed: bool = false
 var preview: bool = false
+var preview_mode: String = ""
 var preview_time: float = 0.0
 var preview_shots: int = 0
 var started: bool = false
@@ -27,11 +30,12 @@ var started: bool = false
 
 func _ready() -> void:
 	preview = OS.get_cmdline_user_args().has("--preview") and not OS.has_feature("android")
+	preview_mode = OS.get_environment("SAQR_PREVIEW")
 	get_viewport().transparent_bg = true
 	origin = XROrigin3D.new()
 	add_child(origin)
 	head = XRCamera3D.new()
-	head.near = 0.03
+	head.near = 0.02
 	head.far = 60.0
 	origin.add_child(head)
 	var environment_node := WorldEnvironment.new()
@@ -39,11 +43,18 @@ func _ready() -> void:
 	environment.background_mode = Environment.BG_COLOR
 	environment.background_color = Color(0, 0, 0, 0)
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color(0.72, 0.82, 1.0)
-	environment.ambient_light_energy = 0.85
+	environment.ambient_light_color = Color(0.75, 0.8, 0.9)
+	environment.ambient_light_energy = 0.55
 	environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	environment_node.environment = environment
 	add_child(environment_node)
+	# One soft key light so the models read as solid shapes (no shadows: cheap).
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-55, -35, 0)
+	sun.light_energy = 1.1
+	sun.light_color = Color(1.0, 0.97, 0.92)
+	sun.shadow_enabled = false
+	add_child(sun)
 	studio = Sprite3D.new()
 	studio.texture = load("res://assets/ui/studio.png")
 	studio.pixel_size = 0.00085
@@ -61,28 +72,26 @@ func _ready() -> void:
 		aim.pose = &"aim"
 		origin.add_child(aim)
 		aim_controllers.append(aim)
-		var gauntlet := Gauntlet.create(i)
-		gauntlet.controller = controller
-		gauntlet.aim_node = aim
-		controller.add_child(gauntlet)
-		gauntlet.visible = false
-		gauntlets.append(gauntlet)
-	director = HuntDirector.new()
+	hud = WristHud.new()
+	controllers[0].add_child(hud)
+	director = BattleDirector.new()
 	add_child(director)
-	director.visible = false
+	jet = PlayerJet.new()
+	jet.hand = controllers[1]
+	director.add_child(jet)
+	jet.visible = false
 	xr = XRServer.find_interface("OpenXR") as OpenXRInterface
 	if preview:
-		environment.background_color = Color(0.05, 0.06, 0.09, 1.0)
+		environment.background_color = Color(0.36, 0.38, 0.40, 1.0)
 		get_viewport().transparent_bg = false
 		head.position = Vector3(0, 1.6, 0)
-		head.rotation_degrees.x = -30.0
-		controllers[0].position = Vector3(-0.26, 1.18, -0.38)
-		controllers[0].rotation_degrees = Vector3(-30, 8, 0)
-		controllers[1].position = Vector3(0.26, 1.22, -0.38)
-		controllers[1].rotation_degrees = Vector3(-12, -8, 0)
-		for i in range(2):
-			aim_controllers[i].position = controllers[i].position
-			aim_controllers[i].rotation = controllers[i].rotation
+		head.rotation_degrees.x = -8.0
+		head.fov = 80.0
+		controllers[0].position = Vector3(-0.2, 1.28, -0.36)
+		controllers[0].rotation_degrees = Vector3(-10, 25, 0)
+		controllers[1].position = Vector3(0.12, 1.36, -0.32)
+		aim_controllers[1].position = controllers[1].position
+		_add_preview_room()
 	else:
 		if xr == null or (not xr.is_initialized() and not xr.initialize()):
 			_stop("تعذر تشغيل OpenXR. أعد تشغيل التطبيق من النظارة.")
@@ -128,6 +137,9 @@ func _tracking_ready() -> bool:
 func _process(delta: float) -> void:
 	if failed:
 		return
+	if preview and preview_mode == "models":
+		_models_lineup(delta)
+		return
 	var ready := foreground and _tracking_ready()
 	if ready and not positioned:
 		_recenter()
@@ -136,12 +148,13 @@ func _process(delta: float) -> void:
 		return
 	studio.modulate.a = clock.tick(delta, ready and positioned and rendered)
 	studio.visible = not clock.finished and ready
+	if preview and not clock.finished:
+		clock.tick(10.0, true)
 	if clock.finished and not started:
 		started = true
-		director.build(head, gauntlets)
-		director.visible = true
+		director.build(head, jet, hud)
 		if preview:
-			director.on_room_ready(_preview_room(), 0.0, true)
+			director.on_room_ready(_preview_mounts(), 0.0, true)
 		else:
 			room_scan = RoomScan.new()
 			add_child(room_scan)
@@ -149,8 +162,7 @@ func _process(delta: float) -> void:
 			room_scan.start(origin, head)
 	if not started:
 		return
-	for g in gauntlets:
-		g.visible = ready and (preview or g.controller.get_is_active())
+	jet.visible = ready and not jet.destroyed and (preview or controllers[1].get_is_active())
 	if not ready:
 		return
 	var triggers := [0.0, 0.0]
@@ -161,14 +173,12 @@ func _process(delta: float) -> void:
 		for i in range(2):
 			triggers[i] = controllers[i].get_float("trigger")
 			grips[i] = controllers[i].get_float("grip")
-		var stick := controllers[0].get_vector2("thumbstick")
-		director.adjust_floor(stick.y, delta)
-		director.cycle_mode(stick.x, delta)
-	director.update_hands(delta, triggers, grips)
+	jet.fly(delta, aim_controllers[1].global_transform)
+	director.update_controls(delta, triggers[1], grips[1], triggers[0])
 
 
 func _button(action: StringName, hand_index: int) -> void:
-	if not clock.finished or not foreground or director == null:
+	if not clock.finished or not foreground or director == null or not started:
 		return
 	director.on_button(action, hand_index)
 
@@ -183,61 +193,190 @@ func _recenter() -> void:
 	studio.look_at(head.global_position, Vector3.UP, true)
 
 
-## Scripted desktop demo: menu → place the gem → breaches open in fake walls →
-## a critter emerges, gets roped and reeled → results screen.
+func _stop(message: String) -> void:
+	failed = true
+	push_error(message)
+	OS.alert(message, "SAQR")
+	get_tree().quit(1)
+
+
+# --- desktop preview (CI screenshots; not a headset capture) ------------------------------
+
+const PREVIEW_ROOM := [
+	{"origin": Vector3(0.0, 0, -2.6), "normal": Vector3(0, 0, 1), "width": 4.2, "height": 2.6, "kind": "wall"},
+	{"origin": Vector3(2.1, 0, -0.6), "normal": Vector3(-1, 0, 0), "width": 4.0, "height": 2.6, "kind": "wall"},
+	{"origin": Vector3(-2.1, 0, -0.6), "normal": Vector3(1, 0, 0), "width": 4.0, "height": 2.6, "kind": "wall"},
+	{"origin": Vector3(0.0, 0, 1.4), "normal": Vector3(0, 0, -1), "width": 4.2, "height": 2.6, "kind": "wall"},
+	{"origin": Vector3(0.0, 2.6, -0.6), "normal": Vector3.DOWN, "width": 4.0, "height": 0.0, "kind": "ceiling"},
+]
+
+
+func _preview_mounts() -> Array:
+	return PREVIEW_ROOM.duplicate(true)
+
+
+## Grey stand-in walls and floor so the screenshots read like a room.
+func _add_preview_room() -> void:
+	var wall_m := StandardMaterial3D.new()
+	wall_m.albedo_color = Color(0.78, 0.76, 0.72)
+	wall_m.roughness = 0.95
+	wall_m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var floor_m := StandardMaterial3D.new()
+	floor_m.albedo_color = Color(0.52, 0.45, 0.38)
+	floor_m.roughness = 0.9
+	for m in PREVIEW_ROOM:
+		var q := MeshInstance3D.new()
+		var plane := PlaneMesh.new()
+		if m.kind == "ceiling":
+			continue
+		plane.size = Vector2(m.width, m.height)
+		plane.orientation = PlaneMesh.FACE_Z
+		q.mesh = plane
+		q.material_override = wall_m
+		add_child(q)
+		q.position = m.origin + Vector3(0, m.height * 0.5, 0)
+		q.look_at(q.position - m.normal, Vector3.UP)
+		q.rotate_object_local(Vector3.UP, PI)
+	var fl := MeshInstance3D.new()
+	var fp := PlaneMesh.new()
+	fp.size = Vector2(4.2, 4.0)
+	fl.mesh = fp
+	fl.material_override = floor_m
+	fl.position = Vector3(0, 0, -0.6)
+	add_child(fl)
+
+
+## Scripted demo for screenshots. Default: menu → wave 1 (targets, drones) →
+## cannon → lock → salvo. SAQR_PREVIEW=armor: tanks, bombs, fighter missile and
+## flares. SAQR_PREVIEW=boss: the gunship coming out of its bay.
 func _preview_input(delta: float, triggers: Array, grips: Array) -> void:
 	preview_time += delta
+	var aim := aim_controllers[1]
 	match director.phase:
-		HuntDirector.Phase.MENU:
-			head.rotation_degrees.x = -6.0
-			var wanted := OS.get_environment("SHARARA_PREVIEW_MODE")
-			if wanted != "":
-				director.set_mode(wanted)
-			if preview_time > 0.8:
-				director.on_button(&"ax_button", 1)
-		HuntDirector.Phase.PLACING:
-			head.rotation_degrees.x = -30.0
-			if preview_time > 1.3:
-				director.on_button(&"ax_button", 1)
-				director._next_spawn = director._phase_time + 0.6
-		HuntDirector.Phase.PLAYING:
-			head.rotation_degrees.x = -4.0 if preview_time < 2.4 else -18.0
-			if preview_time > 6.0:
-				director._end(true)
-	if director.phase == HuntDirector.Phase.PLAYING and not director.sparks.is_empty() and is_instance_valid(director.sparks[0]):
-		var target: Vector3 = director.sparks[0].global_position
-		if target.distance_to(controllers[1].global_position) > 0.2:
-			controllers[1].look_at(target, Vector3.UP)
-			aim_controllers[1].global_transform = controllers[1].global_transform
-		if preview_time > 3.9:
-			triggers[1] = 1.0
-		if preview_time > 4.5:
-			grips[1] = 1.0
-	var shots := [[0.5, "menu"], [1.1, "placing"], [2.2, "breach"], [3.6, "spark"], [4.3, "rope"], [5.4, "pull"], [7.8, "results"]]
+		BattleDirector.Phase.MENU:
+			_point(aim, director._menu_root.global_position if director._menu_root else Vector3(0, 1.4, -1.2))
+			if preview_time > 0.9:
+				director.auto_spawn = preview_mode == ""
+				director.start_match()
+				if preview_mode == "armor":
+					director._queue.clear()
+					director.wave = 1
+					director.hud.set_wave(1, false)
+					for k in ["tank", "tank", "fighter", "drone"]:
+						director.spawn(k)
+				elif preview_mode == "boss":
+					director._queue.clear()
+					director._begin_wave(4)
+					director._queue.clear()
+					director.spawn("boss")
+				preview_time = 1.0
+		BattleDirector.Phase.PLAYING:
+			var target = _preview_target()
+			if target:
+				_point(aim, target.hit_center())
+			if preview_mode == "":
+				triggers[1] = 1.0 if preview_time > 2.6 and preview_time < 3.3 else 0.0
+				grips[1] = 1.0 if preview_time > 3.5 and preview_time < 4.6 else 0.0
+				triggers[0] = 1.0 if preview_time > 5.2 and preview_time < 5.9 else 0.0
+			elif preview_mode == "armor":
+				if preview_time > 3.6 and preview_time < 3.62:
+					director.on_button(&"ax_button", 1)
+				if preview_time > 4.4 and preview_time < 4.42:
+					director.on_button(&"by_button", 1)
+				triggers[1] = 1.0 if preview_time > 5.0 and preview_time < 5.6 else 0.0
+			elif preview_mode == "boss":
+				triggers[1] = 1.0 if preview_time > 5.0 and preview_time < 5.8 else 0.0
+				grips[1] = 1.0 if preview_time > 6.0 and preview_time < 7.0 else 0.0
+			if preview_time > 8.5 and director.phase == BattleDirector.Phase.PLAYING:
+				director.won = true
+				director._finish(true)
+		BattleDirector.Phase.RESULTS:
+			_point(aim, director._results_root.global_position if director._results_root else Vector3(0, 1.4, -1.2))
+	var shots: Array = {
+		"": [[0.6, "menu"], [1.9, "targets"], [3.0, "cannon"], [4.4, "lock"], [5.0, "salvo"], [5.6, "laser"], [9.4, "results"]],
+		"armor": [[2.4, "bays"], [3.4, "tanks"], [3.9, "bomb"], [4.6, "flares"], [6.5, "fighter"]],
+		"boss": [[2.0, "boss_bay"], [3.6, "boss_emerges"], [5.5, "boss_fight"], [7.2, "boss_lock"]],
+	}[preview_mode]
 	if preview_shots < shots.size() and preview_time >= shots[preview_shots][0]:
 		var shot_name: String = shots[preview_shots][1]
 		preview_shots += 1
 		await RenderingServer.frame_post_draw
 		DirAccess.make_dir_recursive_absolute("res://build/previews")
 		get_viewport().get_texture().get_image().save_png("res://build/previews/%s.png" % shot_name)
-		var right := gauntlets[1]
-		print("preview shot %s: phase=%d wave=%d score=%d tether=%d sparks=%d" % [shot_name, director.phase, director.wave, director.score, right.tether.state, director.sparks.size()])
+		print("preview shot %s: phase=%d wave=%d score=%d enemies=%d shots=%d locks=%d armor=%d" % [shot_name, director.phase, director.wave, director.score, director.enemies.size(), director.shots.size(), jet.locks.size(), int(jet.armor)])
 		if preview_shots >= shots.size():
 			get_tree().quit()
 
 
-## Fake room for the desktop preview: a wall ahead, a wall to the right, a ceiling.
-func _preview_room() -> Array:
-	return [
-		{"origin": Vector3(0.3, 0, -2.8), "normal": Vector3(0, 0, 1), "width": 3.0, "height": 2.5, "kind": "wall"},
-		{"origin": Vector3(2.3, 0, -1.0), "normal": Vector3(-1, 0, 0), "width": 3.0, "height": 2.5, "kind": "wall"},
-		{"origin": Vector3(-0.9, 2.5, -1.6), "normal": Vector3.DOWN, "width": 2.0, "height": 0.0, "kind": "ceiling"},
-		{"origin": Vector3(-2.3, 0, -0.6), "normal": Vector3(1, 0, 0), "width": 3.0, "height": 2.5, "kind": "wall"},
-	]
+func _preview_target():
+	var best = null
+	var best_d := INF
+	for e in director.enemies:
+		if not e.alive():
+			continue
+		var a := CombatMath.off_axis_deg(head.global_position, -head.global_basis.z, e.hit_center())
+		if a < best_d:
+			best_d = a
+			best = e
+	return best
 
 
-func _stop(message: String) -> void:
-	failed = true
-	push_error(message)
-	OS.alert(message, "SHARARA")
-	get_tree().quit(1)
+func _point(aim: Node3D, at: Vector3) -> void:
+	var from := controllers[1].global_position
+	if at.distance_to(from) < 0.2:
+		return
+	var want := Basis.looking_at((at - from).normalized(), Vector3.UP)
+	aim.global_transform = Transform3D(aim.global_basis.slerp(want, 0.25), from)
+	controllers[1].global_basis = aim.global_basis
+
+
+## SAQR_PREVIEW=models: the player's jet up close, then every enemy, for a
+## design review (desktop render, not a headset capture).
+var _lineup: Node3D
+func _models_lineup(delta: float) -> void:
+	preview_time += delta
+	if _lineup == null:
+		_lineup = Node3D.new()
+		add_child(_lineup)
+		hud.visible = false
+		var j := Models.jet(false)
+		_lineup.add_child(j.root)
+		j.root.position = Vector3(0, 1.36, -0.46)
+		j.root.rotation_degrees = Vector3(0, 135, -8)
+		head.rotation_degrees = Vector3(-17, 0, 0)
+		head.fov = 42.0
+	var stages := [[0.4, "jet_closeup"], [1.2, "jet_top"], [2.0, "enemies"]]
+	if preview_shots >= stages.size():
+		get_tree().quit()
+		return
+	if preview_time < stages[preview_shots][0]:
+		return
+	var shot_name: String = stages[preview_shots][1]
+	preview_shots += 1
+	if shot_name == "jet_top":
+		var jr: Node3D = _lineup.get_child(0)
+		jr.position = Vector3(0, 1.1, -0.33)
+		jr.rotation_degrees = Vector3(0, 180, 0)
+		head.rotation_degrees = Vector3(-58, 0, 0)
+	elif shot_name == "enemies":
+		for c in _lineup.get_children():
+			c.queue_free()
+		var items := [["fighter", Models.jet(true), Vector3(-0.42, 1.52, -0.9), Vector3(10, 150, -8)],
+			["drone", Models.drone(), Vector3(0.0, 1.55, -0.9), Vector3(15, 200, 0)],
+			["tank", Models.tank(), Vector3(0.42, 1.38, -0.9), Vector3(20, 145, 0)],
+			["boss", Models.gunship(), Vector3(-0.05, 1.13, -1.15), Vector3(14, 155, 0)],
+			["target", Models.target(), Vector3(0.62, 1.12, -1.25), Vector3(0, -25, 0)]]
+		for it in items:
+			var r: Node3D = it[1].root
+			_lineup.add_child(r)
+			r.position = it[2]
+			r.rotation_degrees = it[3]
+			if it[0] == "boss":
+				r.scale = Vector3.ONE * 0.75
+		head.rotation_degrees = Vector3(-8, 0, 0)
+		head.fov = 62.0
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	DirAccess.make_dir_recursive_absolute("res://build/previews")
+	get_viewport().get_texture().get_image().save_png("res://build/previews/%s.png" % shot_name)
+	print("preview shot %s: %d triangles" % [shot_name, Models.triangles(_lineup)])

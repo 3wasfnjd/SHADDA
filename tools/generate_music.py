@@ -1,4 +1,4 @@
-"""Original deterministic music loops for SHARARA, CC0. Pure synthesis, no samples.
+"""Original deterministic music loops for SAQR, CC0. Pure synthesis, no samples.
 menu   : calm 96 bpm pads + plucks
 battle : 124 bpm kick/hat/bass/arp
 boss   : 136 bpm, darker minor bass, double hats, stabs
