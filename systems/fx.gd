@@ -73,6 +73,65 @@ static func smoke(world: Node3D, at: Vector3, s: float, dark: bool = false) -> F
 	return f
 
 
+## A lick of flame that rises and fades (burning wrecks, incendiary hits).
+static func flame(world: Node3D, at: Vector3, s: float) -> Fx:
+	var f := Fx.new()
+	f.kind = "smoke"
+	f.size = s
+	f.duration = 0.45
+	world.add_child(f)
+	f.global_position = at
+	var c: Color = [Color(1.0, 0.82, 0.25), Color(1.0, 0.55, 0.12), Color(0.98, 0.35, 0.08)][randi() % 3]
+	var ball := Toon.add(f, Toon.ball(1.0, 8, 5), _flame_mat(c))
+	ball.scale = Vector3.ONE * s
+	f._parts.append({"node": ball, "kind": "trail"})
+	return f
+
+
+static var _flame_mats: Dictionary = {}
+static func _flame_mat(c: Color) -> ShaderMaterial:
+	var k := c.to_html()
+	if not _flame_mats.has(k):
+		_flame_mats[k] = Toon.flat(c)
+	return _flame_mats[k]
+
+
+## A jagged lightning bolt between two points (the Thunderbolt weapon).
+static func bolt(world: Node3D, a: Vector3, b: Vector3) -> Fx:
+	var f := Fx.new()
+	f.kind = "bolt"
+	f.duration = 0.24
+	world.add_child(f)
+	f.global_position = a
+	var pts: Array = [a]
+	var n := 7
+	var d := b - a
+	var side := d.cross(Vector3.UP)
+	if side.length() < 0.001:
+		side = Vector3.RIGHT
+	side = side.normalized()
+	var up := side.cross(d).normalized()
+	for i in range(1, n):
+		var j := (side * randf_range(-1, 1) + up * randf_range(-1, 1)) * d.length() * 0.07
+		pts.append(a + d * (float(i) / n) + j)
+	pts.append(b)
+	var core := _flame_mat(Color(0.92, 0.97, 1.0))
+	var glow := _flame_mat(Color(0.45, 0.75, 1.0))
+	for i in range(pts.size() - 1):
+		var p0: Vector3 = pts[i]
+		var p1: Vector3 = pts[i + 1]
+		var seg := p1 - p0
+		if seg.length() < 0.001:
+			continue
+		var holder := Toon.add(f, Toon.block(Vector3(0.004, 0.004, seg.length())), core)
+		holder.global_position = (p0 + p1) * 0.5
+		var upv := Vector3.UP if absf(seg.normalized().y) < 0.98 else Vector3.RIGHT
+		holder.look_at(holder.global_position + seg, upv)
+		Toon.add(holder, Toon.block(Vector3(0.011, 0.011, seg.length())), glow).transparency = 0.5
+		f._parts.append({"node": holder, "kind": "flicker"})
+	return f
+
+
 ## A four-point muzzle star.
 static func muzzle(world: Node3D, at: Vector3, dir: Vector3, s: float = 0.018) -> Fx:
 	var f := Fx.new()
@@ -170,6 +229,8 @@ func _process(delta: float) -> void:
 				var up := Vector3.UP if absf(p.vel.normalized().y) < 0.99 else Vector3.RIGHT
 				node.look_at(node.global_position + p.vel, up)
 				node.scale = Vector3.ONE * (1.0 - u)
+			"flicker":
+				node.visible = fmod(life, 0.06) < 0.045
 			"trail":
 				node.scale = Vector3.ONE * size * (1.0 + u * 2.2) * (1.0 - u * u)
 				position += Vector3(0, 0.1 * delta, 0)

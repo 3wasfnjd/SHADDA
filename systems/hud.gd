@@ -24,6 +24,8 @@ var _bump: float = 0.0
 var _popups: Array = []
 var _arrow: Node3D
 var _flash: float = 0.0
+var _missile: Label3D
+var _missile_on: bool = false
 
 
 func _ready() -> void:
@@ -71,6 +73,12 @@ func _ready() -> void:
 	_objective.width = 700
 	_objective.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_objective)
+	# Incoming-missile warning (blinks on the board).
+	_missile = UI.number("▲ SAM", 46, Color(1.0, 0.25, 0.15), false)
+	_missile.pixel_size = 0.00042
+	_missile.position = Vector3(0.0, -0.052, 0.003)
+	_missile.visible = false
+	add_child(_missile)
 	# Off-screen arrow (world space, in front of the eyes).
 	_arrow = UI.icon("play", Color(1.0, 0.82, 0.15), 0.05, 0.008)
 	_arrow.top_level = true
@@ -90,6 +98,15 @@ func set_score(v: int) -> void:
 func set_objective(text: String) -> void:
 	if _objective.text != text:
 		_objective.text = text
+
+
+func show_waves(on: bool) -> void:
+	for f in _flags:
+		(f as Node3D).visible = on
+
+
+func set_missile(on: bool) -> void:
+	_missile_on = on
 
 
 func set_combo(m: float) -> void:
@@ -167,6 +184,7 @@ func clear_popups() -> void:
 
 func _process(delta: float) -> void:
 	_flash = maxf(0.0, _flash - delta * 3.0)
+	_missile.visible = _missile_on and fmod(Time.get_ticks_msec() / 1000.0, 0.25) < 0.15
 	_bump = maxf(0.0, _bump - delta * 3.0)
 	_shown = lerpf(_shown, float(_target), minf(1.0, delta * 10.0))
 	if absf(_shown - _target) < 1.0:

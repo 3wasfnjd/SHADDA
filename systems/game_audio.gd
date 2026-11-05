@@ -13,11 +13,12 @@ const MUSIC_DB := -15.0
 
 
 func _ready() -> void:
-	for i in range(12):
+	for i in range(16):
 		var v := AudioStreamPlayer3D.new()
 		v.max_distance = 10.0
 		v.unit_size = 1.4
 		v.volume_db = -12.0
+		v.bus = &"SFX"
 		add_child(v)
 		voices.append(v)
 
@@ -58,6 +59,7 @@ func play_music(track: String) -> void:
 		for i in range(2):
 			var p := AudioStreamPlayer.new()
 			p.volume_db = -80.0
+			p.bus = &"Music"
 			add_child(p)
 			_music.append(p)
 	_music_name = track

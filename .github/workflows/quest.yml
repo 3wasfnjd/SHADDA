@@ -13,6 +13,8 @@ jobs:
   apk:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
+    env:
+      SAQR_HAS_RELEASE_KEY: ${{ secrets.SAQR_KEYSTORE_B64 != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -29,13 +31,13 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
-          key: shadda-development-signing-v1
+          key: saqr-development-signing-v1
       - name: Create development signing key when absent
         shell: bash
         run: |
           mkdir -p "$HOME/.android"
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=SHADDA Development,O=ABODEN GAMES,C=SA'
+            keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=SAQR Development,O=ABODEN GAMES,C=SA'
           fi
       - name: Install verified Godot and OpenXR Vendors
         run: python3 tools/setup_ci.py
@@ -46,46 +48,60 @@ jobs:
         run: godot --headless --xr-mode off --path . --script tests/test_meta_extension.gd
       - name: Test flight and war arithmetic (free flight stays in the room, hits, ballistics, walls with openings)
         run: godot --headless --xr-mode off --path . --script tests/test_war_math.gd
-      - name: Test the five-stage campaign (rings, convoy + 2 s anti-air telegraph, dogfight + ace, base raid, bomber, upgrades)
-        run: godot --headless --xr-mode off --path . --script tests/test_campaign.gd
+      - name: Parse every script
+        run: godot --headless --xr-mode off --path . --script tests/_parse.gd
+      - name: Test v1.0 end to end (menus, 8 missions, hangar + weapons, 2 s anti-air telegraph, pause, breakup + bail-out, settings)
+        run: godot --headless --xr-mode off --fixed-fps 90 --disable-vsync --path . --script tests/test_campaign.gd
       - name: Test the room war headless (takeoff, flight, guns, rockets, cargo drop, bomb, tank, crash, 5 waves + bomber)
-        run: godot --headless --xr-mode off --path . --script tests/test_battle.gd
-      - name: Capture in-engine desktop previews in a grey stand-in room (not a Quest capture)
+        run: godot --headless --xr-mode off --fixed-fps 90 --disable-vsync --path . --script tests/test_battle.gd
+      - name: Capture in-engine desktop previews (boards and missions; not a Quest capture)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libgl1-mesa-dri
-          for m in s1 s2 s4 s5; do
-            mode=$m
-            SAQR_PREVIEW=$mode timeout 200 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility -- --preview
+          for m in menus m1 m3 m4 m7 m8 crash; do
+            SAQR_PREVIEW=$m timeout 200 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility -- --preview
             mkdir -p build/previews/$m; mv build/previews/*.png build/previews/$m/ 2>/dev/null || true
           done
           timeout 200 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility --resolution 800x600 -s tools/look.gd -- build/previews/models
           ls -R build/previews
       - name: Export native ARM64 Android APK
-        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SAQR-Quest-AR-v0.6.0.apk
+        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SAQR-Quest-v1.0.0.apk
       - name: Verify manifest, ABI, splash, and certificate
         run: python3 tools/verify_apk.py
+      - name: Release-signed APK for the Meta store (only when the owner has added a release key)
+        env:
+          KEYSTORE_B64: ${{ secrets.SAQR_KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.SAQR_KEYSTORE_PASS }}
+        if: env.SAQR_HAS_RELEASE_KEY == 'true'
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/saqr-release.keystore"
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/saqr-release.keystore"
+          export GODOT_ANDROID_KEYSTORE_RELEASE_USER=saqr
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$KEYSTORE_PASS"
+          godot --headless --xr-mode off --path . --export-release Quest build/SAQR-Quest-v1.0.0-store.apk
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --print-certs build/SAQR-Quest-v1.0.0-store.apk
+          rm -f "$RUNNER_TEMP/saqr-release.keystore"
       - name: Publish package report as a check annotation
         run: |
           echo "::notice title=package-report::$(python3 -c 'import json;print(json.dumps(json.load(open("build/package-report.json"))))')"
-          echo "::notice title=apk-sha256::$(cat build/SAQR-Quest-AR-v0.6.0.apk.sha256)"
+          echo "::notice title=apk-sha256::$(cat build/SAQR-Quest-v1.0.0.apk.sha256)"
       - name: Publish APK as a GitHub pre-release (direct download, GitHub only — never Meta)
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="saqr-v0.6.0"
+          TAG="saqr-v1.0.0"
           NOTES="بناء آلي من ${GITHUB_SHA}. تم البناء وفحص الحزمة ونجاح الاختبارات الآلية فقط؛ لم يُثبّت أو يُختبر على Quest. توقيع تطويري."
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes "$NOTES" --prerelease
           else
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "SAQR v0.6.0 — حملة 5 مراحل" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "SAQR v1.0.0 — صقر" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
           fi
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/SAQR-Quest-AR-v0.6.0.apk build/SAQR-Quest-AR-v0.6.0.apk.sha256 build/package-report.json build/versions.txt
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/SAQR-Quest-v1.0.0.apk build/SAQR-Quest-v1.0.0.apk.sha256 build/package-report.json build/versions.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: SAQR-Quest-AR-v0.6.0-room-war
+          name: SAQR-Quest-v1.0.0
           path: build/
           if-no-files-found: error
           retention-days: 14

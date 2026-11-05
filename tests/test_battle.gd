@@ -203,10 +203,12 @@ func _run() -> void:
 	plane.take_hit(10.0)
 	assert(hp0 - plane.hp < 3.0, "roll soaked the hit")
 
-	print("STAGE: Shot down → crash → results.")
-	# Shot down → crash → results.
+	print("STAGE: Shot down → breaks apart, pilot bails out → results.")
 	plane.take_hit(999.0)
-	assert(plane.state == PlayerPlane.State.CRASHING)
+	assert(plane.state == PlayerPlane.State.WRECKED and not plane.model.root.visible, "the plane came apart")
+	var pieces := battle.get_children().filter(func(n): return n is Debris)
+	assert(pieces.size() >= 4, "wings, tail, nose and fuselage tumble (%d pieces)" % pieces.size())
+	assert(battle.get_children().any(func(n): return n is Debris.Chute), "the pilot bailed out")
 	assert(await _until(func(): return battle.phase == Battle.Phase.RESULTS, 72 * 8), "results after the crash")
 	assert(plane.state == PlayerPlane.State.WRECKED and not battle.won)
 	battle._phase_t = 2.0

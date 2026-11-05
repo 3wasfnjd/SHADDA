@@ -91,4 +91,31 @@ render('loss', 1.6, lambda t, u, r: saw(t * (330 - 200 * u)) * 0.4 * min(1.0, t 
 render('pickup', 0.4, lambda t, u, r: math.sin(math.tau * (660 + 900 * u) * t) * 0.5 * env(t, u, 0.003, 0.9))
 render('click', 0.08, lambda t, u, r: math.sin(math.tau * 900 * t) * env(t, u, 0.001, 2.0))
 render('alarm', 0.9, lambda t, u, r: (1 if math.sin(math.tau * (880 if (t * 6) % 1 < 0.5 else 660) * t) > 0 else -1) * 0.3 * min(1, t / 0.01) * (1 - u) ** 0.3)
+# v1.0: menus, hangar, new weapons, breakup.
+def phase_sine(name, seconds, freq_fn, amp_fn):
+    # Integrates the frequency so sweeps stay clean (no chirp artefacts).
+    n = int(RATE * seconds)
+    ph = 0.0
+    s = []
+    for i in range(n):
+        t = i / RATE
+        u = i / n
+        ph += math.tau * freq_fn(t, u) / RATE
+        s.append(math.sin(ph) * amp_fn(t, u))
+    write(name, s)
+
+
+render('warning', 0.12, lambda t, u, r: (1 if math.sin(math.tau * 1250 * t) > 0 else -1) * 0.35 * env(t, u, 0.002, 0.4))
+render('coin', 0.45, lambda t, u, r: (math.sin(math.tau * (988 if t < 0.08 else 1319) * t) + 0.3 * math.sin(math.tau * 2 * (988 if t < 0.08 else 1319) * t)) * 0.5 * env(t, u, 0.002, 1.2))
+render('star', 0.6, lambda t, u, r: sum(math.sin(math.tau * f * t) * (1 if t > d else 0) for f, d in [(784, 0), (1175, 0.06), (1568, 0.12)]) * 0.3 * env(t, u, 0.003, 1.4))
+render('ring', 0.55, lambda t, u, r: (math.sin(math.tau * 1046 * t) + 0.5 * math.sin(math.tau * 1568 * t) + 0.25 * math.sin(math.tau * 2093 * t)) * 0.4 * env(t, u, 0.002, 1.3))
+lp_zap = LP(5000)
+render('zap', 0.55, lambda t, u, r: (lp_zap(r.uniform(-1, 1)) * (1 if (t * 90) % 1 < 0.45 else 0.2) * 1.4 + saw(t * 118) * 0.35) * env(t, u, 0.001, 1.2))
+lp_fl = LP(2600)
+render('flare', 0.7, lambda t, u, r: (lp_fl(r.uniform(-1, 1)) * 1.8 * (1 if (t * 14) % 1 < 0.7 else 0.4) + math.sin(math.tau * 300 * t) * 0.2 * max(0, 1 - u * 6)) * env(t, u, 0.002, 0.9))
+phase_sine('dive', 1.9, lambda t, u: 1900 - 1200 * u, lambda t, u: 0.45 * min(1, t / 0.15) * (1 - u) ** 0.25)
+lp_ej = LP(1400)
+render('eject', 0.6, lambda t, u, r: (lp_ej(r.uniform(-1, 1)) * 2.0 * math.sin(math.pi * u) + math.sin(math.tau * 180 * t) * 0.6 * max(0, 1 - u * 8)) * min(1, t / 0.003))
+render('clatter', 0.3, lambda t, u, r: (sum(math.sin(math.tau * f * t) for f in [1830, 2710, 3950]) * 0.25 + r.uniform(-1, 1) * 0.4 * max(0, 1 - u * 6)) * env(t, u, 0.0008, 2.2))
+render('cannon20', 0.16, lambda t, u, r: (math.sin(math.tau * (95 - 40 * u) * t) * 0.9 + r.uniform(-1, 1) * 0.7 * max(0, 1 - u * 3)) * env(t, u, 0.0008, 2.4))
 print('Generated cues and engine loops in', out)

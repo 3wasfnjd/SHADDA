@@ -3,7 +3,10 @@ extends Node3D
 ## logo appears exactly once: as the Meta system splash while the app loads
 ## (assets/ui/studio.png → vr_splash.png). There is no second in-game logo.
 ## The plane is flown entirely by hand (see PlayerPlane for the sticks);
-## the right controller also points at the menu buttons.
+## the flight-stick hand also points at the menu boards.
+## Store behaviour: the game pauses when the Meta menu opens or the headset
+## loses focus, and on the left menu button; boards re-centre on recenter.
+## Settings (quality, refresh rate, audio, handedness…) come from Profile.
 ## Desktop "--preview" fakes a headset in a grey room so CI can render
 ## screenshots (which prove nothing about the Quest itself).
 
@@ -16,6 +19,9 @@ var plane: PlayerPlane
 var hud: Hud
 var battle: Battle
 var room_scan: RoomScan
+var menus: Menus
+var sun: DirectionalLight3D
+var env: Environment
 
 ## Free flight for tuning takeoff and handling: no room scan, no enemies,
 ## a flat floor and a large open box around the player. Set true to bring
@@ -33,6 +39,9 @@ var preview_shots := 0
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	Profile.ensure()
+	_setup_buses()
 	preview = OS.get_cmdline_user_args().has("--preview") and not OS.has_feature("android")
 	preview_mode = OS.get_environment("SAQR_PREVIEW")
 	get_viewport().transparent_bg = true
@@ -44,7 +53,7 @@ func _ready() -> void:
 	head.doppler_tracking = Camera3D.DOPPLER_TRACKING_PHYSICS_STEP
 	origin.add_child(head)
 	var env_node := WorldEnvironment.new()
-	var env := Environment.new()
+	env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0, 0, 0, 0)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
@@ -53,7 +62,7 @@ func _ready() -> void:
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	env_node.environment = env
 	add_child(env_node)
-	var sun := DirectionalLight3D.new()
+	sun = DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-55, -35, 0)
 	sun.light_energy = 1.15
 	sun.light_color = Color(1.0, 0.97, 0.9)
@@ -73,7 +82,15 @@ func _ready() -> void:
 	hud = Hud.new()
 	controllers[0].add_child(hud)
 	battle = Battle.new()
+	battle.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(battle)
+	menus = Menus.new()
+	add_child(menus)
+	menus.head = head
+	menus.battle = battle
+	battle.menus = menus
+	menus.settings_changed.connect(apply_settings)
+	battle.dusk_changed.connect(_on_dusk)
 	plane = PlayerPlane.new()
 	plane.hand = controllers[1]
 	battle.add_child(plane)
@@ -98,16 +115,97 @@ func _ready() -> void:
 			_stop("Passthrough غير متاح. اللعبة تتطلب رؤية الغرفة.")
 			return
 		xr.environment_blend_mode = XRInterface.XR_ENV_BLEND_MODE_ALPHA_BLEND
-		if xr.get_available_display_refresh_rates().has(72.0):
-			xr.display_refresh_rate = 72.0
+		xr.session_visible.connect(_on_focus_lost)
+		xr.session_stopping.connect(_on_focus_lost)
+		xr.pose_recentered.connect(_on_recentered)
 	RenderingServer.frame_post_draw.connect(func(): rendered = true)
+	apply_settings()
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
 		foreground = false
-	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		_on_focus_lost()
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN or what == NOTIFICATION_APPLICATION_RESUMED:
 		foreground = true
+
+
+## The Meta menu opened or the headset came off: freeze the game behind a
+## pause board (a store requirement — nothing runs while you're away).
+func _on_focus_lost() -> void:
+	if started and battle and battle.phase == Battle.Phase.PLAYING:
+		battle.pause_game()
+
+
+func _on_recentered() -> void:
+	if menus:
+		menus.recenter()
+
+
+# --- settings -----------------------------------------------------------------------------
+
+func _setup_buses() -> void:
+	for bus in ["Music", "SFX"]:
+		if AudioServer.get_bus_index(bus) < 0:
+			AudioServer.add_bus()
+			AudioServer.set_bus_name(AudioServer.bus_count - 1, bus)
+			AudioServer.set_bus_send(AudioServer.bus_count - 1, "Master")
+
+
+static func _db(v: float) -> float:
+	return -80.0 if v <= 0.01 else linear_to_db(v)
+
+
+## Applies Profile settings: volumes, render quality, refresh rate, the
+## language of open boards and the plane's assists.
+func apply_settings() -> void:
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Music"), _db(float(Profile.get_s("music"))))
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), _db(float(Profile.get_s("sfx"))))
+	var q := str(Profile.get_s("quality"))
+	var vp := get_viewport()
+	vp.msaa_3d = Viewport.MSAA_2X if q == "balanced" else Viewport.MSAA_4X
+	vp.scaling_3d_scale = {"balanced": 1.0, "high": 1.0, "ultra": 1.25}.get(q, 1.0)
+	Debris.effects_high = str(Profile.get_s("effects")) == "high"
+	if plane:
+		plane.aim_assist = bool(Profile.get_s("aim_assist"))
+		plane.leveler = bool(Profile.get_s("leveler"))
+		plane.haptics = bool(Profile.get_s("haptics"))
+	if xr and xr.is_initialized() and not preview:
+		var want := float(int(Profile.get_s("refresh")))
+		var rates := xr.get_available_display_refresh_rates()
+		if not rates.has(want):
+			want = 90.0 if rates.has(90.0) else (72.0 if rates.has(72.0) else 0.0)
+		if want > 0.0:
+			xr.display_refresh_rate = want
+		# Fixed foveation: stronger on Balanced, gentle on Ultra; dynamic on all.
+		if "foveation_level" in xr:
+			xr.foveation_level = {"balanced": 3, "high": 2, "ultra": 1}.get(q, 2)
+		if "foveation_dynamic" in xr:
+			xr.foveation_dynamic = true
+		if xr.has_method("set_cpu_level"):
+			var lvl := OpenXRInterface.PERF_SETTINGS_LEVEL_SUSTAINED_HIGH if q != "balanced" else OpenXRInterface.PERF_SETTINGS_LEVEL_SUSTAINED_LOW
+			xr.set_cpu_level(lvl)
+			xr.set_gpu_level(lvl)
+	if menus and menus.is_open() and menus.panel.rtl != (Lang.code() == "ar"):
+		menus.refresh()
+
+
+## Dusk mission: the real room dims and warms, the sun goes low and orange.
+func _on_dusk(on: bool) -> void:
+	if sun:
+		sun.light_color = Color(1.0, 0.62, 0.38) if on else Color(1.0, 0.97, 0.9)
+		sun.light_energy = 0.95 if on else 1.15
+		sun.rotation_degrees = Vector3(-18, -60, 0) if on else Vector3(-55, -35, 0)
+	if env:
+		env.ambient_light_color = Color(0.62, 0.55, 0.7) if on else Color(0.82, 0.84, 0.92)
+	if preview or not Engine.has_singleton("OpenXRFbPassthroughExtension"):
+		return
+	var pt = Engine.get_singleton("OpenXRFbPassthroughExtension")
+	if pt.has_method("set_brightness_contrast_saturation"):
+		if on:
+			pt.call("set_brightness_contrast_saturation", -38.0, 1.15, 0.65)
+		else:
+			pt.call("set_brightness_contrast_saturation", 0.0, 1.0, 1.0)
 
 
 func _tracking_ready() -> bool:
@@ -138,9 +236,10 @@ func _process(delta: float) -> void:
 		started = true
 		battle.build(head, plane, hud)
 		battle.hands = controllers
+		menus.hand = controllers[_stick()]
 		plane.visible = true
 		if preview:
-			battle.on_room_ready(_free_flight_room() if preview_mode.begins_with("s") else PREVIEW_ROOM.duplicate(true))
+			battle.on_room_ready(_free_flight_room() if _open_preview() else PREVIEW_ROOM.duplicate(true))
 		else:
 			if ROOM_SCAN:
 				room_scan = RoomScan.new()
@@ -154,26 +253,41 @@ func _process(delta: float) -> void:
 	var tr := 0.0
 	var gr := 0.0
 	var inp := {}
+	var stick := _stick()
+	var other := 1 - stick
 	if preview:
 		var input := _preview_input(delta)
 		tr = input[0]
 		gr = input[1]
 		inp = input[2]
 	else:
-		tr = controllers[1].get_float("trigger")
-		gr = controllers[1].get_float("grip")
-		var ls := controllers[0].get_vector2("thumbstick")
-		var rs := controllers[1].get_vector2("thumbstick")
+		tr = controllers[stick].get_float("trigger")
+		gr = controllers[stick].get_float("grip")
+		var ls := controllers[other].get_vector2("thumbstick")
+		var rs := controllers[stick].get_vector2("thumbstick")
+		var sens := float(Profile.get_s("sensitivity"))
+		var inv := -1.0 if bool(Profile.get_s("invert")) else 1.0
 		inp = {
 			"throttle_delta": _dead(ls.y),
 			"yaw": _dead(ls.x),
-			"pitch": _dead(rs.y),           # stick up = climb / take off, down = descend / land
-			"roll": _dead(rs.x),
-			"boost": controllers[0].get_float("trigger") > 0.5,
-			"brake": controllers[0].get_float("grip") > 0.5,
+			"pitch": clampf(_dead(rs.y) * inv * sens, -1.0, 1.0),     # stick up = climb / take off, down = descend / land
+			"roll": clampf(_dead(rs.x) * sens, -1.0, 1.0),
+			"boost": controllers[other].get_float("trigger") > 0.5,
+			"brake": controllers[other].get_float("grip") > 0.5,
 		}
-	var aim := aims[1].global_transform
+	var aim := aims[stick].global_transform
+	menus.hand = controllers[stick]
+	if menus.is_open():
+		menus.update(delta, aim.origin, -aim.basis.z, tr)
+		tr = 0.0
+		gr = 0.0
+	elif battle.phase == Battle.Phase.PLAYING and not battle.paused:
+		menus.update(delta, aim.origin, -aim.basis.z, 0.0)
 	battle.update_controls(delta, aim.origin, -aim.basis.z, inp, tr, gr)
+
+
+func _stick() -> int:
+	return 0 if str(Profile.get_s("hand")) == "left" else 1
 
 
 static func _dead(v: float) -> float:
@@ -182,6 +296,8 @@ static func _dead(v: float) -> float:
 
 func _button(action: StringName, hand_index: int) -> void:
 	if not started or not foreground:
+		return
+	if menus.is_open() and action != &"menu_button":
 		return
 	battle.on_button(action, hand_index)
 
@@ -223,8 +339,12 @@ static var PREVIEW_ROOM := {
 }
 
 
+func _open_preview() -> bool:
+	return preview_mode.begins_with("m") or preview_mode == "crash"
+
+
 func _preview_room_visuals() -> void:
-	if preview_mode.begins_with("s"):
+	if _open_preview():
 		var fm := StandardMaterial3D.new()
 		fm.albedo_color = Color(0.6, 0.5, 0.38)
 		var fl0 := MeshInstance3D.new()
@@ -278,7 +398,9 @@ func _preview_room_visuals() -> void:
 ## Scripted flights for the screenshots. Returns [trigger_r, grip_r, trigger_l].
 func _preview_input(delta: float) -> Array:
 	preview_t += delta
-	if preview_mode.begins_with("s"):
+	if preview_mode == "menus":
+		return _preview_menus(delta)
+	if _open_preview():
 		return _preview_campaign(delta)
 	var out: Array = [0.0, 0.0, {}]
 	var aim := aims[1]
@@ -345,29 +467,64 @@ func _preview_input(delta: float) -> Array:
 	return out
 
 
-## SAQR_PREVIEW=s1..s5: jump into a campaign stage over a plain floor and
-## fly the autopilot at its objectives for screenshots.
+## SAQR_PREVIEW=menus: every board, one screenshot each.
+var _boards := [["main", {}], ["missions", {}], ["brief", {"index": 2}], ["hangar", {"tab": "upgrades"}], ["hangar", {"tab": "weapons"}],
+	["settings", {"tab": "game"}], ["settings", {"tab": "graphics"}], ["controls", {}], ["pause", {}],
+	["debrief", {"index": 3, "stars": 2, "score": 4250, "time": 83.0, "kills": 7, "accuracy": 41, "hull": 72, "coins": 285, "record": true}],
+	["failed", {"index": 4, "reason": "plane_lost"}], ["main_en", {}], ["brief_en", {"index": 2}], ["hangar_en", {"tab": "upgrades"}]]
+var _board_open := -1
+func _preview_menus(_delta: float) -> Array:
+	head.fov = 56.0
+	head.position = Vector3(0, 1.48, 0.6)
+	var k := int(preview_t / 0.9)
+	if k < _boards.size() and k != _board_open and battle.phase == Battle.Phase.MENU:
+		_board_open = k
+		var b: Array = _boards[k]
+		var name: String = b[0]
+		if name.ends_with("_en"):
+			Profile.settings.lang = "en"
+			name = name.trim_suffix("_en")
+		if k == 0:
+			Profile.progress.coins = 1240
+			for id in ["training", "patrol", "convoy"]:
+				Profile.progress.missions[id] = {"done": true, "stars": 3 if id != "convoy" else 2, "best": 3000}
+			Profile.progress.owned.append("quad")
+			Profile.progress.levels.engine = 2
+			Profile.progress.levels.guns = 1
+		menus.open(name, b[1])
+	if preview_shots < _boards.size() and preview_t >= 0.9 * preview_shots + 0.55:
+		preview_shots += 1
+		_capture("board_%02d_%s" % [preview_shots, menus.screen], preview_shots >= _boards.size())
+	var aim := aims[1]
+	if menus.is_open():
+		var target := menus.panel.global_transform * Vector3(0.0, -0.02, 0.0)
+		aim.global_transform = Transform3D(Basis.looking_at((target - controllers[1].global_position).normalized(), Vector3.UP), controllers[1].global_position)
+	return [0.0, 0.0, {}]
+
+
+## SAQR_PREVIEW=m1..m8: jump into a mission over a plain floor and fly the
+## autopilot at its objectives for screenshots. "crash": shot down.
 var _jumped := false
 func _preview_campaign(delta: float) -> Array:
 	var out: Array = [0.0, 0.0, {}]
-	var n := int(preview_mode.substr(1)) - 1
+	var n := 3 if preview_mode == "crash" else int(preview_mode.substr(1)) - 1
 	if battle.phase == Battle.Phase.MENU:
 		if preview_t > 0.6:
-			battle.start_match()
+			Profile.progress.seen_controls = true
+			battle.start_mission(n)
 		return out
 	var c: Campaign = battle.campaign
 	if c == null:
 		return out
 	if not _jumped:
 		_jumped = true
-		for k in range(n):
-			plane.apply_upgrade(["engine", "guns", "rockets", "armor"][k])
-		c._start_stage(n)
 		var f := -head.global_basis.z
 		f.y = 0
 		plane.flight = {"pos": head.global_position + f.normalized() * 1.2 + Vector3(0, -0.3, 0), "basis": Basis.looking_at(f.normalized(), Vector3.UP), "speed": 1.2, "sink": 0.0, "ground": false}
-		c.t = 3.5
+		c._intro_t = 2.0
 		preview_t = 0.0
+	if c.mode == "play" and c.t < 0.1:
+		c.t = 6.0 if preview_mode != "m1" else 0.0
 	var goal := c.center + Vector3(0, 1.3, 0)
 	if c._ring_i < c._rings.size():
 		goal = c._rings[c._ring_i].pos
@@ -381,13 +538,19 @@ func _preview_campaign(delta: float) -> Array:
 					goal = e.hit_center() + (Vector3(0, 0.7, 0) if e.kind in ["tank", "truck", "sam", "soldier", "fuel", "radar", "aa"] else Vector3.ZERO)
 	out[0] = 1.0 if preview_t > 3.0 and fmod(preview_t, 1.4) < 0.8 else 0.0
 	out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75)
-	if plane.airborne() and preview_mode != "s1":
+	if plane.airborne() and preview_mode in ["m3", "m6"]:
 		if fmod(preview_t, 4.0) < delta:
-			plane.drop_bomb()
-	var want := Basis.looking_at((plane.global_position.lerp(goal, 0.3) - head.global_position).normalized(), Vector3.UP)
+			plane.use_special()
+	if preview_mode == "crash" and preview_t > 3.0 and plane.alive():
+		plane.invincible = false
+		plane.take_hit(999.0)
+	var look_at_p := plane.global_position.lerp(goal, 0.3)
+	if preview_mode == "crash" and not plane.alive():
+		look_at_p = plane.global_position + Vector3(0, -0.3, 0)
+	var want := Basis.looking_at((look_at_p - head.global_position).normalized(), Vector3.UP)
 	head.global_basis = head.global_basis.slerp(want, minf(1.0, delta * 2.5))
 	aims[1].global_transform = Transform3D(head.global_basis, controllers[1].global_position)
-	var times := [0.4, 2.5, 5.0, 7.5, 10.0, 12.5]
+	var times := [0.4, 2.5, 5.0, 7.5, 10.0, 12.5] if preview_mode != "crash" else [3.05, 3.3, 3.8, 4.6, 6.0, 8.0]
 	if preview_shots < times.size() and preview_t >= times[preview_shots]:
 		preview_shots += 1
 		_capture("%s_%d" % [preview_mode, preview_shots], preview_shots >= times.size())

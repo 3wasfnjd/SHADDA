@@ -70,7 +70,30 @@ const ENEMIES := {
 	"truck":     {"hp": 5.0,  "radius": 0.09, "points": 150},
 	"radar":     {"hp": 10.0, "radius": 0.11, "points": 400},
 	"fuel":      {"hp": 4.0,  "radius": 0.09, "points": 250},
+	"diver":     {"hp": 4.0,  "radius": 0.12, "points": 300},
+	"cargo":     {"hp": 60.0, "radius": 0.17, "points": 0},
+	"hangar":    {"hp": 14.0, "radius": 0.13, "points": 0},
 }
+# Weapons from the hangar.
+const GUN_SPECS := {
+	# rate multiplier, damage per round, muzzles per burst, spread (rad)
+	"twin":   {"rate": 1.0,  "damage": 1.0, "per": 2, "spread": 0.006},
+	"quad":   {"rate": 0.85, "damage": 0.7, "per": 4, "spread": 0.014},
+	"cannon": {"rate": 0.32, "damage": 3.2, "per": 1, "spread": 0.003},
+}
+const SPECIAL_CHARGES := {"bombs": 3, "cluster": 3, "mines": 4, "lightning": 3}
+const SPECIAL_RELOAD := {"bombs": 4.0, "cluster": 4.5, "mines": 3.5, "lightning": 7.0}
+const MINE_LIFE := 14.0
+const MINE_DAMAGE := 9.0
+const MINE_RADIUS := 0.26
+const LIGHTNING_DAMAGE := 6.5
+const LIGHTNING_RANGE := 2.2
+const LIGHTNING_JUMP := 1.1
+const BURN_SECONDS := 3.0
+const BURN_DPS := 1.1
+const CANNON_BLAST := 0.07
+const FLARE_RADIUS := 2.0
+const DIVE_BOMB_DAMAGE := 7.0
 const ENEMY_BULLET_DAMAGE := 3.0
 const ENEMY_BULLET_SPEED := 6.0
 const SHELL_DAMAGE := 12.0
@@ -181,7 +204,7 @@ static func rc_fly(st: Dictionary, inp: Dictionary, delta: float, ground_y: floa
 		b = b * Basis(Vector3.FORWARD, float(inp.roll) * ROLL_RATE * delta)
 		b = b * Basis(Vector3.UP, -float(inp.yaw) * YAW_RATE * delta)
 		var bank := bank_of(b)
-		if absf(float(inp.roll)) < 0.1:
+		if absf(float(inp.roll)) < 0.1 and bool(inp.get("level", true)):
 			b = b * Basis(Vector3.FORWARD, -clampf(bank, -1.2 * delta, 1.2 * delta))
 		# Banked wings turn the plane (coordinated turn).
 		var lift_k := clampf(speed / STALL, 0.0, 1.0)

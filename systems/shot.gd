@@ -2,7 +2,8 @@ class_name Shot
 extends Node3D
 ## One projectile, moved and resolved by the battle each physics step with
 ## exact segment tests.
-## player: bullet, rocket, bomb      enemy: ebullet, shell, flak, ebomb
+## player: bullet (twin / incendiary / 20 mm explosive), rocket, bomb, mine
+## enemy: ebullet, shell, flak, ebomb, sam
 
 var kind: String = "bullet"
 var hostile: bool = false
@@ -15,6 +16,9 @@ var target: Node3D = null
 var dead: bool = false
 var fuse: float = 0.0
 var gravity: float = 0.0
+var incendiary: bool = false
+var explosive: float = 0.0       # 20 mm: blast radius on impact
+var _light: MeshInstance3D
 var _trail_timer: float = 0.0
 
 
@@ -50,6 +54,10 @@ static func make(shot_kind: String, from: Vector3, dir: Vector3, inherit: Vector
 			s.velocity = d * 1.2
 			s.max_life = 5.0
 			s.damage = WarMath.SAM_DAMAGE
+		"mine":
+			s.velocity = inherit * 0.25 + d * 0.3
+			s.max_life = WarMath.MINE_LIFE
+			s.damage = WarMath.MINE_DAMAGE
 		"flak":
 			s.velocity = d * WarMath.FLAK_SPEED
 			s.max_life = 1.4
@@ -63,7 +71,19 @@ func _ready() -> void:
 	match kind:
 		"bullet", "ebullet":
 			var col := Color(1.0, 0.9, 0.35, 1.0) if kind == "bullet" else Color(1.0, 0.35, 0.25, 1.0)
-			Toon.add(self, Toon.capsule(0.0026, 0.05, 6), Toon.flat(col), Vector3.ZERO, Vector3(90, 0, 0))
+			var r := 0.0026
+			if incendiary:
+				col = Color(1.0, 0.5, 0.15, 1.0)
+			if explosive > 0.0:
+				col = Color(1.0, 0.98, 0.75, 1.0)
+				r = 0.0048
+			Toon.add(self, Toon.capsule(r, 0.05 if explosive <= 0.0 else 0.065, 6), _tracer(col), Vector3.ZERO, Vector3(90, 0, 0))
+		"mine":
+			Toon.add(self, Toon.ball(0.016, 10, 6), Toon.mat(Color(0.18, 0.2, 0.18), 0.6, 0.0012))
+			for k in range(6):
+				var dir: Vector3 = [Vector3.UP, Vector3.DOWN, Vector3.LEFT, Vector3.RIGHT, Vector3.FORWARD, Vector3.BACK][k]
+				Toon.add(self, Toon.can(0.002, 0.004, 0.012, 6), Toon.mat(Color(0.5, 0.5, 0.48), 0.6, 0.0), dir * 0.018, Vector3(90, 0, 0) if absf(dir.z) > 0.5 else (Vector3(0, 0, 90) if absf(dir.x) > 0.5 else Vector3.ZERO))
+			_light = Toon.add(self, Toon.ball(0.005, 8, 4), Toon.flat(Color(1.0, 0.15, 0.1, 1.0)), Vector3(0, 0.017, 0))
 		"rocket":
 			add_child(Models.rocket())
 			Toon.add(self, Toon.ball(0.007, 8, 4), Toon.flat(Color(1.0, 0.7, 0.2, 1.0)), Vector3(0, 0, 0.032), Vector3.ZERO, Vector3(1, 1, 2.2))
@@ -84,9 +104,25 @@ func _ready() -> void:
 			Toon.add(self, Toon.ball(0.008, 8, 4), Toon.flat(Color(1.0, 0.45, 0.15, 1.0)), Vector3(0, 0, 0.045), Vector3.ZERO, Vector3(1, 1, 2.5))
 
 
+static var _tracers: Dictionary = {}
+static func _tracer(c: Color) -> ShaderMaterial:
+	var k := c.to_html()
+	if not _tracers.has(k):
+		_tracers[k] = Toon.flat(c)
+	return _tracers[k]
+
+
 func step(delta: float, world: Node3D) -> void:
 	prev = global_position
 	life += delta
+	if kind == "mine":
+		velocity *= 1.0 - minf(1.0, delta * 1.8)
+		global_position += velocity * delta + Vector3(0, sin(life * 2.2) * 0.012 * delta, 0)
+		if _light:
+			_light.visible = fmod(life, 0.6) < 0.3
+		if life >= max_life:
+			dead = true
+		return
 	if kind == "rocket" or kind == "sam":
 		var top := WarMath.ROCKET_SPEED if kind == "rocket" else WarMath.SAM_SPEED
 		var turn := WarMath.ROCKET_TURN if kind == "rocket" else WarMath.SAM_TURN

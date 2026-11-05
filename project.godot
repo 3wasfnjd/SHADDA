@@ -21,6 +21,10 @@ textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0,0,0,0)
 anti_aliasing/quality/msaa_3d=1
 
+[internationalization]
+
+locale/include_text_server_data=true
+
 [physics]
 3d/physics_engine="Jolt Physics"
 common/physics_ticks_per_second=90
@@ -31,6 +35,6 @@ openxr/reference_space=1
 openxr/default_action_map="res://config/openxr_action_map.tres"
 openxr/environment_blend_mode=2
 openxr/extensions/meta/passthrough=true
-openxr/extensions/meta/anchor_api=true
-openxr/extensions/meta/scene_api=true
+openxr/extensions/meta/anchor_api=false
+openxr/extensions/meta/scene_api=false
 shaders/enabled=true

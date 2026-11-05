@@ -16,6 +16,8 @@ const OLIVE := Color(0.40, 0.45, 0.26)
 const TIRE := Color(0.12, 0.12, 0.13)
 
 const PLAYER := {"body": RED, "trim": CREAM, "ring": WHITE, "disc": RED, "mark": WHITE, "mark_kind": "star", "tip": YELLOW, "nose": RED}
+const DIVER := {"body": Color(0.22, 0.3, 0.45), "trim": Color(0.95, 0.95, 0.92), "ring": Color(0.95, 0.95, 0.92), "disc": Color(0.16, 0.16, 0.17), "mark": YELLOW, "mark_kind": "diamond", "tip": YELLOW, "nose": Color(0.95, 0.95, 0.92)}
+const FRIEND := {"body": Color(0.86, 0.84, 0.76), "trim": RED, "ring": RED, "disc": WHITE, "mark": RED, "mark_kind": "star", "tip": RED, "nose": RED}
 const ENEMY := {"body": Color(0.40, 0.46, 0.38), "trim": Color(0.16, 0.16, 0.17), "ring": YELLOW, "disc": Color(0.16, 0.16, 0.17), "mark": YELLOW, "mark_kind": "diamond", "tip": WHITE, "nose": YELLOW}
 
 
@@ -194,9 +196,11 @@ static func fighter(pal: Dictionary, outline: float = 0.0018) -> Dictionary:
 
 
 ## Twin-engine cargo plane that drops parachute crates. ~45 cm long.
-static func transport() -> Dictionary:
+static func transport(palette: Dictionary = {}) -> Dictionary:
 	var pal := ENEMY.duplicate()
 	pal.body = Color(0.58, 0.52, 0.38)
+	if not palette.is_empty():
+		pal = palette.duplicate()
 	var root := Node3D.new()
 	root.name = "Transport"
 	var o := 0.0024
@@ -460,6 +464,14 @@ static func player_plane(outline: float = 0.0018) -> Dictionary:
 	body.mesh = load(PLAYER_MESH)
 	body.material_override = Toon.textured(load(PLAYER_TEX), 0.2, 0.0012)
 	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Pre-cut pieces for the crash (tools/split_player_plane.gd).
+	var cut := {}
+	for b in Debris.BUCKETS:
+		var path := "res://assets/models/player_parts/%s.res" % b
+		if ResourceLoader.exists(path):
+			cut[b] = load(path)
+	if not cut.is_empty():
+		body.set_meta("debris_parts", cut)
 	root.add_child(body)
 	var pal := PLAYER.duplicate()
 	pal.tip = YELLOW
@@ -472,7 +484,7 @@ static func player_plane(outline: float = 0.0018) -> Dictionary:
 	pil.root.scale = Vector3.ONE * 1.35
 	root.add_child(pil.root)
 	var tips: Array = [pivot(root, "WingTip", Vector3(0.165, -0.02, 0.0)), pivot(root, "WingTip", Vector3(-0.165, -0.02, 0.0))]
-	return {"root": root, "prop": p.prop, "blur": p.blur, "gear": [], "rockets": arm.rockets, "bombs": arm.bombs, "muzzles": arm.muzzles, "nose": nose, "exhaust": exhaust, "gear_height": 0.0865, "parked_pitch": 0.0, "pilot": pil, "tips": tips}
+	return {"root": root, "body": body, "prop": p.prop, "blur": p.blur, "gear": [], "rockets": arm.rockets, "bombs": arm.bombs, "muzzles": arm.muzzles, "nose": nose, "exhaust": exhaust, "gear_height": 0.0865, "parked_pitch": 0.0, "pilot": pil, "tips": tips}
 
 
 ## Guns, rocket rails and bombs under the wings. `y` is the wing underside.
@@ -678,3 +690,56 @@ static func ring() -> Dictionary:
 		var a := TAU * i / 8.0
 		Toon.add(spin, Toon.ball(0.018, 8, 4), Toon.mat(RED, 0.5, 0.0015), Vector3(cos(a) * 0.27, sin(a) * 0.27, 0))
 	return {"root": root, "spin": spin, "mat": m}
+
+
+## A friendly round-roofed hangar for the airfield mission (~26 cm long),
+## its door facing +Z... (front = -Z like everything else).
+static func hangar() -> Dictionary:
+	var root := Node3D.new()
+	root.name = "Hangar"
+	var o := 0.0016
+	var roof := Toon.mat(Color(0.42, 0.48, 0.34), 0.12, o)
+	# Half-round roof (a half cylinder, open underneath).
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var segs := 16
+	for i in range(segs):
+		var a0 := PI * i / segs
+		var a1 := PI * (i + 1) / segs
+		var p00 := Vector3(cos(a0) * 0.084, sin(a0) * 0.084, -0.12)
+		var p01 := Vector3(cos(a0) * 0.084, sin(a0) * 0.084, 0.12)
+		var p10 := Vector3(cos(a1) * 0.084, sin(a1) * 0.084, -0.12)
+		var p11 := Vector3(cos(a1) * 0.084, sin(a1) * 0.084, 0.12)
+		for v in [p00, p11, p10, p00, p01, p11]:
+			st.set_normal(Vector3(v.x, v.y, 0.0).normalized())
+			st.add_vertex(v)
+	Toon.add(root, st.commit(), roof)
+	# Ribs over the roof.
+	var rib := PackedVector2Array()
+	for i in range(17):
+		var a2 := PI * i / 16.0
+		rib.append(Vector2(cos(a2) * 0.089, -sin(a2) * 0.089))
+	for i in range(16, -1, -1):
+		var a3 := PI * i / 16.0
+		rib.append(Vector2(cos(a3) * 0.083, -sin(a3) * 0.083))
+	rib.reverse()
+	for k in range(5):
+		Toon.add(root, Toon.slab(rib, 0.006), Toon.mat(Color(0.4, 0.42, 0.38), 0.4, 0.0), Vector3(0, 0, -0.1 + k * 0.05), Vector3(90, 0, 0))
+	# Front wall with a big dark door and a red star.
+	var wall := PackedVector2Array()
+	for i in range(17):
+		var a4 := PI * i / 16.0
+		wall.append(Vector2(cos(a4) * 0.086, -sin(a4) * 0.086))
+	wall.reverse()
+	Toon.add(root, Toon.slab(wall, 0.004), Toon.mat(CREAM, 0.3, o), Vector3(0, 0, -0.12), Vector3(90, 0, 0))
+	Toon.add(root, Toon.slab(wall, 0.004), Toon.mat(Color(0.42, 0.48, 0.34), 0.12, o), Vector3(0, 0, 0.12), Vector3(90, 0, 0))
+	Toon.add(root, Toon.block(Vector3(0.1, 0.07, 0.006)), Toon.mat(DARK, 0.3, o), Vector3(0, 0.035, -0.121))
+	Toon.add(root, Toon.slab(Toon.star(0.014), 0.002), Toon.mat(RED, 0.4, 0.0), Vector3(0, 0.086, -0.123), Vector3(90, 0, 0))
+	# A wind sock on a pole beside it.
+	Toon.add(root, Toon.can(0.002, 0.002, 0.16, 6), Toon.mat(METAL, 0.5, 0.0), Vector3(0.11, 0.08, -0.08))
+	Toon.add(root, Toon.can(0.004, 0.009, 0.035, 8), Toon.mat(Color(1.0, 0.5, 0.1), 0.3, 0.0), Vector3(0.125, 0.15, -0.08), Vector3(0, 0, 90))
+	# Sandbags ring the front.
+	for k in range(6):
+		Toon.add(root, Toon.capsule(0.008, 0.03, 8), Toon.mat(KHAKI, 0.2, 0.001), Vector3(-0.075 + k * 0.03, 0.006, -0.15), Vector3(0, 0, 90))
+	Toon.bake(root)
+	return {"root": root}

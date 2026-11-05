@@ -1,25 +1,30 @@
 class_name UI
 extends RefCounted
-## Wordless cartoon UI: chunky numbers in the studio font with a thick ink
-## outline, flat icons, and big 3D push-buttons you point at.
+## SAQR's own look: Lalezar poster titles, Changa text, flat icons. The panel
+## menus live in panel.gd / menus.gd; this file has the shared text helpers.
 
-static var _font: Font
+static var _fonts: Dictionary = {}
 
 
-static func font() -> Font:
-	if _font == null:
+## "title" (Lalezar), "body" (Changa 600) or "bold" (Changa 800).
+static func font(kind: String = "bold") -> Font:
+	if not _fonts.has(kind):
 		var f := FontFile.new()
-		f.load_dynamic_font("res://assets/fonts/BalooBhaijaan2-Arabic.ttf")
-		var v := FontVariation.new()
-		v.base_font = f
-		v.variation_opentype = {"wght": 800}
-		_font = v
-	return _font
+		if kind == "title":
+			f.load_dynamic_font("res://assets/fonts/Lalezar-Regular.ttf")
+			_fonts[kind] = f
+		else:
+			f.load_dynamic_font("res://assets/fonts/Changa.ttf")
+			var v := FontVariation.new()
+			v.base_font = f
+			v.variation_opentype = {"wght": 800 if kind == "bold" else 600}
+			_fonts[kind] = v
+	return _fonts[kind]
 
 
 static func number(text: String, size: int, color: Color, billboard: bool = true) -> Label3D:
 	var l := Label3D.new()
-	l.font = font()
+	l.font = font("bold")
 	l.text = text
 	l.font_size = size
 	l.pixel_size = 0.001
@@ -79,7 +84,93 @@ static func icon_shape(kind: String) -> PackedVector2Array:
 			return c
 		"plane":
 			return PackedVector2Array([Vector2(0, 0.45), Vector2(0.06, 0.2), Vector2(0.45, 0.05), Vector2(0.45, -0.05), Vector2(0.06, -0.05), Vector2(0.05, -0.3), Vector2(0.18, -0.38), Vector2(0.18, -0.45), Vector2(-0.18, -0.45), Vector2(-0.18, -0.38), Vector2(-0.05, -0.3), Vector2(-0.06, -0.05), Vector2(-0.45, -0.05), Vector2(-0.45, 0.05), Vector2(-0.06, 0.2)])
+		"rings":
+			return _arc(0.44, 0.28, 5.0, 355.0)
+		"coin":
+			return _arc(0.45, 0.0, 0.0, 360.0)
+		"truck":
+			return PackedVector2Array([Vector2(-0.45, -0.25), Vector2(0.45, -0.25), Vector2(0.45, 0.0), Vector2(0.3, 0.2), Vector2(0.1, 0.2), Vector2(0.1, 0.3), Vector2(-0.45, 0.3)])
+		"shield":
+			return PackedVector2Array([Vector2(0, 0.46), Vector2(0.38, 0.32), Vector2(0.34, -0.1), Vector2(0, -0.46), Vector2(-0.34, -0.1), Vector2(-0.38, 0.32)])
+		"radar":
+			var r := _arc(0.45, 0.3, 200.0, 340.0)
+			r.append(Vector2(0.05, -0.05))
+			r.append(Vector2(0.05, -0.45))
+			r.append(Vector2(-0.05, -0.45))
+			r.append(Vector2(-0.05, -0.05))
+			return r
+		"bomber":
+			return PackedVector2Array([Vector2(0, 0.45), Vector2(0.07, 0.25), Vector2(0.48, 0.1), Vector2(0.48, -0.02), Vector2(0.07, 0.0), Vector2(0.06, -0.3), Vector2(0.2, -0.4), Vector2(0.2, -0.46), Vector2(-0.2, -0.46), Vector2(-0.2, -0.4), Vector2(-0.06, -0.3), Vector2(-0.07, 0.0), Vector2(-0.48, -0.02), Vector2(-0.48, 0.1), Vector2(-0.07, 0.25)])
+		"lock":
+			var l := PackedVector2Array([Vector2(-0.32, -0.42), Vector2(0.32, -0.42), Vector2(0.32, 0.05), Vector2(0.22, 0.05)])
+			l.append_array(_arc_pts(0.22, 0.0, 180.0, Vector2(0, 0.05), true))
+			l.append_array(_arc_pts(0.12, 180.0, 0.0, Vector2(0, 0.05), false))
+			l.append(Vector2(-0.22, 0.05))
+			l.append(Vector2(-0.32, 0.05))
+			return l
+		"gear":
+			var g2 := PackedVector2Array()
+			for i in range(24):
+				var a := TAU * i / 24.0
+				var rr := 0.45 if (i / 2) % 2 == 0 else 0.33
+				g2.append(Vector2(cos(a), sin(a)) * rr)
+			return g2
+		"mines":
+			var m := PackedVector2Array()
+			for i in range(16):
+				var a := TAU * i / 16.0
+				m.append(Vector2(cos(a), sin(a)) * (0.46 if i % 2 == 0 else 0.28))
+			return m
+		"lightning":
+			return PackedVector2Array([Vector2(0.1, 0.48), Vector2(-0.28, -0.02), Vector2(-0.02, -0.02), Vector2(-0.12, -0.48), Vector2(0.3, 0.06), Vector2(0.04, 0.06)])
+		"flares":
+			return PackedVector2Array([Vector2(0, 0.48), Vector2(0.12, 0.12), Vector2(0.46, 0.0), Vector2(0.12, -0.12), Vector2(0, -0.48), Vector2(-0.12, -0.12), Vector2(-0.46, 0.0), Vector2(-0.12, 0.12)])
+		"bombs":
+			var bo := _arc(0.3, 0.0, 0.0, 360.0)
+			for i in range(bo.size()):
+				bo[i] += Vector2(0, -0.1)
+			bo.insert(4, Vector2(0.08, 0.45))
+			bo.insert(5, Vector2(-0.08, 0.45))
+			return bo
+		"quad":
+			return PackedVector2Array([Vector2(-0.45, -0.3), Vector2(0.45, -0.3), Vector2(0.45, -0.16), Vector2(-0.2, -0.16), Vector2(-0.2, -0.06), Vector2(0.45, -0.06), Vector2(0.45, 0.08), Vector2(-0.2, 0.08), Vector2(-0.2, 0.18), Vector2(0.45, 0.18), Vector2(0.45, 0.32), Vector2(-0.45, 0.32)])
+		"cannon":
+			return PackedVector2Array([Vector2(-0.45, -0.18), Vector2(0.1, -0.18), Vector2(0.1, -0.08), Vector2(0.48, -0.08), Vector2(0.48, 0.08), Vector2(0.1, 0.08), Vector2(0.1, 0.18), Vector2(-0.45, 0.18)])
+		"twin":
+			return PackedVector2Array([Vector2(-0.45, -0.24), Vector2(0.45, -0.24), Vector2(0.45, -0.08), Vector2(-0.2, -0.08), Vector2(-0.2, 0.08), Vector2(0.45, 0.08), Vector2(0.45, 0.24), Vector2(-0.45, 0.24)])
+		"back":
+			return PackedVector2Array([Vector2(0.45, -0.1), Vector2(-0.1, -0.1), Vector2(-0.1, -0.35), Vector2(-0.48, 0.0), Vector2(-0.1, 0.35), Vector2(-0.1, 0.1), Vector2(0.45, 0.1)])
+		"pause":
+			return PackedVector2Array([Vector2(-0.3, -0.4), Vector2(-0.08, -0.4), Vector2(-0.08, 0.4), Vector2(-0.3, 0.4)])
+		"stick":
+			return PackedVector2Array([Vector2(-0.4, -0.45), Vector2(0.4, -0.45), Vector2(0.4, -0.25), Vector2(0.06, -0.25), Vector2(0.06, 0.06), Vector2(0.2, 0.2), Vector2(0.2, 0.42), Vector2(-0.2, 0.42), Vector2(-0.2, 0.2), Vector2(-0.06, 0.06), Vector2(-0.06, -0.25), Vector2(-0.4, -0.25)])
+		"check":
+			return PackedVector2Array([Vector2(-0.45, 0.02), Vector2(-0.3, 0.16), Vector2(-0.12, -0.04), Vector2(0.32, 0.42), Vector2(0.46, 0.28), Vector2(-0.12, -0.32)])
 	return PackedVector2Array([Vector2(-0.4, -0.4), Vector2(0.4, -0.4), Vector2(0.4, 0.4), Vector2(-0.4, 0.4)])
+
+
+static func _arc_pts(r: float, a0: float, a1: float, c: Vector2, _ccw: bool) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in range(13):
+		var a := deg_to_rad(lerpf(a0, a1, i / 12.0))
+		out.append(c + Vector2(cos(a), sin(a)) * r)
+	return out
+
+
+## A ring (or disc when inner = 0) as one simple polygon with a hairline slit.
+static func _arc(outer: float, inner: float, a0: float, a1: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var n := 28
+	for i in range(n + 1):
+		var a := deg_to_rad(lerpf(a0, a1, float(i) / n))
+		pts.append(Vector2(cos(a), sin(a)) * outer)
+	if inner > 0.0:
+		for i in range(n, -1, -1):
+			var a2 := deg_to_rad(lerpf(a0, a1, float(i) / n))
+			pts.append(Vector2(cos(a2), sin(a2)) * inner)
+	elif a1 - a0 >= 359.0:
+		pts.remove_at(pts.size() - 1)
+	return pts
 
 
 ## A flat icon facing +Z, `size` metres across.

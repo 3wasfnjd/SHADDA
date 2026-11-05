@@ -43,6 +43,12 @@ action_type = 0
 toplevel_paths = PackedStringArray("/user/hand/left", "/user/hand/right")
 
 
+[sub_resource type="OpenXRAction" id="menu_button"]
+resource_name = "menu_button"
+localized_name = "menu_button"
+action_type = 0
+toplevel_paths = PackedStringArray("/user/hand/left")
+
 [sub_resource type="OpenXRAction" id="thumbstick"]
 resource_name = "thumbstick"
 localized_name = "thumbstick"
@@ -57,8 +63,8 @@ toplevel_paths = PackedStringArray("/user/hand/left", "/user/hand/right")
 
 [sub_resource type="OpenXRActionSet" id="game"]
 resource_name = "game"
-localized_name = "SHADDA"
-actions = [SubResource("trigger"), SubResource("grip"), SubResource("grip_pose"), SubResource("aim_pose"), SubResource("haptic"), SubResource("ax_button"), SubResource("by_button"), SubResource("thumbstick"), SubResource("thumbstick_click")]
+localized_name = "SAQR"
+actions = [SubResource("trigger"), SubResource("grip"), SubResource("grip_pose"), SubResource("aim_pose"), SubResource("haptic"), SubResource("ax_button"), SubResource("by_button"), SubResource("thumbstick"), SubResource("thumbstick_click"), SubResource("menu_button")]
 
 [sub_resource type="OpenXRIPBinding" id="left_trigger"]
 action = SubResource("trigger")
@@ -133,9 +139,13 @@ binding_path = "/user/hand/right/input/thumbstick"
 action = SubResource("thumbstick_click")
 binding_path = "/user/hand/right/input/thumbstick/click"
 
+[sub_resource type="OpenXRIPBinding" id="left_menu"]
+action = SubResource("menu_button")
+binding_path = "/user/hand/left/input/menu/click"
+
 [sub_resource type="OpenXRInteractionProfile" id="touch"]
 interaction_profile_path = "/interaction_profiles/oculus/touch_controller"
-bindings = [SubResource("left_trigger"), SubResource("left_grip"), SubResource("left_grip_pose"), SubResource("left_aim_pose"), SubResource("left_haptic"), SubResource("left_ax_button"), SubResource("left_by_button"), SubResource("right_trigger"), SubResource("right_grip"), SubResource("right_grip_pose"), SubResource("right_aim_pose"), SubResource("right_haptic"), SubResource("right_ax_button"), SubResource("right_by_button"), SubResource("left_thumbstick"), SubResource("left_thumbstick_click"), SubResource("right_thumbstick"), SubResource("right_thumbstick_click")]
+bindings = [SubResource("left_trigger"), SubResource("left_grip"), SubResource("left_grip_pose"), SubResource("left_aim_pose"), SubResource("left_haptic"), SubResource("left_ax_button"), SubResource("left_by_button"), SubResource("right_trigger"), SubResource("right_grip"), SubResource("right_grip_pose"), SubResource("right_aim_pose"), SubResource("right_haptic"), SubResource("right_ax_button"), SubResource("right_by_button"), SubResource("left_thumbstick"), SubResource("left_thumbstick_click"), SubResource("right_thumbstick"), SubResource("right_thumbstick_click"), SubResource("left_menu")]
 
 [resource]
 action_sets = [SubResource("game")]

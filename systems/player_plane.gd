@@ -9,7 +9,9 @@ extends Node3D
 ## Left stick   ↑↓ throttle (stays where you leave it)   ←→ rudder / ground steering
 ## Right stick  ↑↓ pitch (pull back = nose up)            ←→ roll
 ## Right trigger guns   Right grip hold = lock, release = rockets
-## A bomb   B barrel roll   Left trigger boost   Left grip brakes
+## A special weapon (bombs, cluster, air mines, Thunderbolt)   B barrel roll
+## Left trigger boost   Left grip brakes
+## Shot down, it comes apart in pieces and the pilot bails out on a chute.
 
 enum State { PARKED, FLYING, CRASHING, WRECKED }
 
@@ -35,6 +37,13 @@ var lock_mult: float = 1.0
 var armor: float = 1.0
 var cluster: bool = false
 var upgrades: Array = []
+var gun_kind: String = "twin"
+var special: String = "bombs"
+var special_max: int = WarMath.BOMBS
+var has_flares: bool = false
+var aim_assist: bool = true
+var leveler: bool = true
+var haptics: bool = true
 var damage_taken: float = 0.0
 var _trails: Array = []
 var _dust_t: float = 0.0
@@ -101,6 +110,7 @@ func _ready() -> void:
 	_engine.max_distance = 8.0
 	_engine.volume_db = -14.0
 	_engine.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
+	_engine.bus = &"SFX"
 	add_child(_engine)
 
 
@@ -113,8 +123,9 @@ func park(at: Vector3, heading: Vector3, surface_y: float) -> void:
 	state = State.PARKED
 	hp = WarMath.PLANE_HP
 	rockets = rocket_max
-	bombs = WarMath.BOMBS
+	bombs = special_max
 	boost = 1.0
+	(model.root as Node3D).visible = true
 	throttle = 0.0
 	locks.clear()
 	_salvo.clear()
@@ -178,10 +189,6 @@ func tick(delta: float, inp: Dictionary, trigger: float, grip: float) -> void:
 			_crash(delta)
 		State.WRECKED:
 			_rpm = 0.0
-			_smoke_t -= delta
-			if _smoke_t <= 0.0 and battle:
-				_smoke_t = 0.15
-				Fx.smoke(battle, global_position + Vector3(0, 0.03, 0), 0.02, true)
 	velocity = (flight.pos - prev) / maxf(delta, 1e-4)
 	_animate(delta)
 
@@ -204,7 +211,7 @@ func _fly(delta: float, inp: Dictionary) -> void:
 		var raw := clampf(float(inp.get(k, 0.0)), -1.0, 1.0)
 		var curved := raw * (0.35 + 0.65 * absf(raw))
 		_sm[k] = move_toward(_sm[k], curved, delta * 5.0)
-	var step := {"pitch": _sm.pitch, "roll": _sm.roll, "yaw": _sm.yaw, "throttle": throttle, "boost": boosting, "brake": inp.get("brake", false), "power": power}
+	var step := {"pitch": _sm.pitch, "roll": _sm.roll, "yaw": _sm.yaw, "throttle": throttle, "boost": boosting, "brake": inp.get("brake", false), "power": power, "level": leveler}
 	if _roll_t >= 0.0:
 		step.roll = 0.0
 	var was_ground: bool = flight.ground
@@ -326,6 +333,8 @@ func _animate(delta: float) -> void:
 	(_shadow.material_override as StandardMaterial3D).albedo_color.a = clampf(0.55 - h * 0.18, 0.12, 0.55)
 	_sight.visible = airborne()
 	if _sight.visible:
+		var hot := aim_assist and battle != null and _assist_point() != Vector3.INF
+		(_sight.material_override as ShaderMaterial).set_shader_parameter("albedo", Color(1.0, 0.35, 0.2, 0.95) if hot else Color(1.0, 0.95, 0.5, 0.9))
 		var at := nose() + forward() * 0.9
 		_sight.global_position = at
 		var cam := get_viewport().get_camera_3d()
@@ -391,28 +400,60 @@ func _reload(delta: float) -> void:
 			refresh_stores()
 	else:
 		_rocket_reload = WarMath.ROCKET_RELOAD
-	if bombs < WarMath.BOMBS:
+	if bombs < special_max:
 		_bomb_reload -= delta
 		if _bomb_reload <= 0.0:
 			bombs += 1
-			_bomb_reload = WarMath.BOMB_RELOAD
+			_bomb_reload = float(WarMath.SPECIAL_RELOAD.get(special, WarMath.BOMB_RELOAD))
 			refresh_stores()
 
 
 func _fire_guns() -> void:
-	# Two guns per burst, alternating inner/outer pairs; converge 1.2 m ahead.
-	var pair := [_barrel, _barrel + 2]
+	var spec: Dictionary = WarMath.GUN_SPECS.get(gun_kind, WarMath.GUN_SPECS.twin)
+	var muzzles: Array = model.muzzles
+	var pair: Array = []
+	match int(spec.per):
+		4:
+			pair = [0, 1, 2, 3]
+		1:
+			pair = [_barrel * 2]
+		_:
+			pair = [_barrel, _barrel + 2]
 	_barrel = 1 - _barrel
 	var converge := nose() + forward() * 0.9
+	var assist := _assist_point() if aim_assist else Vector3.INF
+	var shot_spec := {"damage": spec.damage, "incendiary": gun_kind == "quad", "explosive": WarMath.CANNON_BLAST if gun_kind == "cannon" else 0.0}
+	var spread: float = spec.spread
 	for i in pair:
-		var m: Node3D = model.muzzles[i]
+		var m: Node3D = muzzles[i % muzzles.size()]
 		var dir := (converge - m.global_position).normalized()
-		dir = dir.rotated(global_basis.y, randf_range(-0.006, 0.006)).rotated(global_basis.x, randf_range(-0.006, 0.006))
-		battle.player_fire("bullet", m.global_position, dir, velocity, null)
-		if randf() < 0.5:
-			Fx.muzzle(battle, m.global_position, dir)
-	battle.cue("gun", global_position, -5.0)
-	_haptic(0.12, 0.02)
+		if assist != Vector3.INF:
+			dir = dir.slerp((assist - m.global_position).normalized(), 0.65)
+		dir = dir.rotated(global_basis.y, randf_range(-spread, spread)).rotated(global_basis.x, randf_range(-spread, spread))
+		battle.player_fire("bullet", m.global_position, dir, velocity, null, shot_spec)
+		if randf() < (0.5 if gun_kind != "cannon" else 1.0):
+			Fx.muzzle(battle, m.global_position, dir, 0.018 if gun_kind != "cannon" else 0.03)
+	battle.cue("cannon20" if gun_kind == "cannon" else "gun", global_position, -5.0 if gun_kind != "quad" else -3.0)
+	_haptic(0.12 if gun_kind != "cannon" else 0.35, 0.02 if gun_kind != "cannon" else 0.05)
+
+
+## Aim assist: where to send rounds when an enemy sits near the sight.
+func _assist_point() -> Vector3:
+	var best := Vector3.INF
+	var best_a := 7.0
+	for e in battle.enemies:
+		if not e.alive():
+			continue
+		var c: Vector3 = e.hit_center()
+		var d := c.distance_to(nose())
+		if d > 3.5:
+			continue
+		var lead: Vector3 = c + (e.velocity - velocity * 0.5) * (d / WarMath.BULLET_SPEED)
+		var a := WarMath.off_axis_deg(nose(), forward(), lead)
+		if a < best_a:
+			best_a = a
+			best = lead
+	return best
 
 
 func _best_lock():
@@ -455,6 +496,40 @@ func _launch(target) -> void:
 	_haptic(0.45, 0.06)
 
 
+## A button: whatever special weapon is fitted.
+func use_special() -> bool:
+	match special:
+		"mines":
+			return drop_mine()
+		"lightning":
+			return fire_lightning()
+	return drop_bomb()
+
+
+func drop_mine() -> bool:
+	if not airborne() or bombs <= 0 or battle == null:
+		return false
+	bombs -= 1
+	_bomb_reload = float(WarMath.SPECIAL_RELOAD.mines)
+	refresh_stores()
+	var from := global_position - forward() * 0.12 - global_basis.y * 0.03
+	battle.player_fire("mine", from, -forward(), velocity, null)
+	battle.cue("bomb_drop", from, -4.0)
+	_haptic(0.3, 0.05)
+	return true
+
+
+func fire_lightning() -> bool:
+	if not airborne() or bombs <= 0 or battle == null:
+		return false
+	bombs -= 1
+	_bomb_reload = float(WarMath.SPECIAL_RELOAD.lightning)
+	refresh_stores()
+	battle.lightning(nose(), forward())
+	_haptic(0.9, 0.15)
+	return true
+
+
 func drop_bomb() -> bool:
 	if not airborne() or bombs <= 0 or battle == null:
 		return false
@@ -477,6 +552,8 @@ func barrel_roll() -> bool:
 	_roll_dir = -1.0 if WarMath.bank_of(flight.basis) > 0.0 else 1.0
 	if battle:
 		battle.cue("whoosh", global_position)
+		if has_flares:
+			battle.flares(global_position - forward() * 0.1)
 	_haptic(0.3, 0.1)
 	return true
 
@@ -496,17 +573,65 @@ func take_hit(amount: float, crash: bool = false) -> void:
 	hit_flash = 1.0
 	_haptic(0.8 if amount > 5.0 else 0.4, 0.12)
 	if hp <= 0.0:
-		state = State.CRASHING
-		_crash_spin = 0.0
-		_crash_fwd = forward()
-		_crash_speed = maxf(0.6, float(flight.speed))
-		locks.clear()
-		_salvo.clear()
-		if battle:
-			battle.cue("engine_die", global_position)
+		_break_apart()
+
+
+## Shot down: a fireball, the plane comes apart into its pieces, and the
+## pilot bails out under a parachute.
+func _break_apart() -> void:
+	state = State.WRECKED
+	locks.clear()
+	_salvo.clear()
+	_rpm = 0.0
+	if _engine.playing:
+		_engine.stop()
+	_haptic(1.0, 0.4)
+	if battle == null:
+		return
+	var at := global_position
+	Fx.explosion(battle, at, 0.14)
+	battle.cue("boom_big", at, 4.0)
+	battle.cue("crash", at, 0.0)
+	battle.shake(1.0)
+	Debris.from_model(battle, model.root, velocity * 0.6, at, "player")
+	(model.root as Node3D).visible = false
+	_shadow.visible = false
+	Debris.eject(battle, (model.pilot.root as Node3D).global_position, velocity * 0.3)
+	battle.on_plane_destroyed()
+
+
+## Hangar loadout and settings from the profile.
+func apply_loadout() -> void:
+	reset_upgrades()
+	var lv: Dictionary = Profile.progress.get("levels", {})
+	var e := int(lv.get("engine", 0))
+	var a := int(lv.get("armor", 0))
+	var g := int(lv.get("guns", 0))
+	var r := int(lv.get("rockets", 0))
+	power = 1.0 + 0.12 * e
+	armor = pow(0.82, a)
+	gun_rate = 1.0 + 0.15 * g
+	gun_damage = 1.0 + 0.2 * g
+	rocket_max = WarMath.ROCKETS + r
+	lock_mult = pow(0.8, r)
+	gun_kind = str(Profile.progress.get("gun", "twin"))
+	special = str(Profile.progress.get("special", "bombs"))
+	cluster = special == "cluster"
+	special_max = int(WarMath.SPECIAL_CHARGES.get(special, WarMath.BOMBS))
+	has_flares = Profile.owns("flares")
+	aim_assist = bool(Profile.get_s("aim_assist"))
+	leveler = bool(Profile.get_s("leveler"))
+	haptics = bool(Profile.get_s("haptics"))
+	rockets = rocket_max
+	bombs = special_max
+	refresh_stores()
 
 
 func reset_upgrades() -> void:
+	gun_kind = "twin"
+	special = "bombs"
+	special_max = WarMath.BOMBS
+	has_flares = false
 	power = 1.0
 	gun_rate = 1.0
 	gun_damage = 1.0
@@ -549,11 +674,11 @@ func refresh_stores() -> void:
 	for i in range(model.rockets.size()):
 		(model.rockets[i] as Node3D).visible = i < rockets
 	for i in range(model.bombs.size()):
-		(model.bombs[i] as Node3D).visible = i < bombs
+		(model.bombs[i] as Node3D).visible = i < bombs and special != "lightning"
 
 
 func _haptic(amplitude: float, duration: float) -> void:
-	if hand and hand.get_is_active():
+	if haptics and hand and hand.get_is_active():
 		hand.trigger_haptic_pulse("haptic", 0.0, amplitude, duration, 0.0)
 
 

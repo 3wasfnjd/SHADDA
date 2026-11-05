@@ -64,8 +64,14 @@ func _run() -> void:
 			return d.root,
 		"balloon": func(): return Models.balloon().root,
 		"crate": func(): return Models.crate().root,
+		"hangar": func(): return Models.hangar().root,
+		"diver": func(): return Models.fighter(Models.DIVER).root,
+		"cargo_friend": func(): return Models.transport(Models.FRIEND).root,
 	}
+	var only := OS.get_environment("LOOK_ONLY")
 	for k in items:
+		if only != "" and not k in only.split(","):
+			continue
 		var m: Node3D = items[k].call()
 		stage.add_child(m)
 		var aabb := AABB()
