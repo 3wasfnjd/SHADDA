@@ -168,13 +168,13 @@ func _main() -> void:
 	p.label(Lang.t("game"), Vector2(0, 0.2), 310, Panel3D.GOLD, "title")
 	p.label("SAQR" if Lang.code() == "ar" else "صقر", Vector2(0, 0.105), 60, Panel3D.HEADER.lightened(0.25), "title")
 	p.label(Lang.t("tagline"), Vector2(0, 0.06), 46, Panel3D.DIM)
-	var y := -0.005
-	var bs := Vector2(0.44, 0.07)
+	var y := 0.0
+	var bs := Vector2(0.44, 0.066)
 	p.button(Lang.t("campaign"), Vector2(0, y), bs, func(): open("missions"), "primary", "play", 56)
-	p.button(Lang.t("hangar"), Vector2(0, y - 0.085), bs, func(): open("hangar"), "normal", "plane")
-	p.button(Lang.t("settings"), Vector2(0, y - 0.17), bs, func(): open("settings"), "normal", "gear")
-	p.button(Lang.t("controls"), Vector2(0, y - 0.255), Vector2(0.44, 0.06), func(): open("controls"), "ghost", "stick", 44)
-	_wallet(p, Vector2(0, -0.295 + 0.0))
+	p.button(Lang.t("hangar"), Vector2(0, y - 0.078), bs, func(): open("hangar"), "normal", "plane")
+	p.button(Lang.t("settings"), Vector2(0, y - 0.156), bs, func(): open("settings"), "normal", "gear")
+	p.button(Lang.t("controls"), Vector2(0, y - 0.228), Vector2(0.44, 0.054), func(): open("controls"), "ghost", "stick", 44)
+	_wallet(p, Vector2(0, -0.29))
 
 
 func _missions() -> void:
