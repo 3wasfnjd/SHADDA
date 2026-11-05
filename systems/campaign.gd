@@ -36,23 +36,27 @@ var _rng := RandomNumberGenerator.new()
 var _intro_t: float = 0.0
 
 
-func begin(b, i: int) -> void:
+var continuing: bool = false
+
+
+## Starts mission `i`. `cont`: the sortie flies straight on from the last one.
+func begin(b, i: int, cont: bool = false) -> void:
 	battle = b
 	index = i
+	continuing = cont
 	id = Missions.get_m(i).id
 	_rng.randomize()
-	var hp: Vector3 = battle.head_position()
-	var f := -(battle.head as Node3D).global_basis.z
-	f.y = 0.0
-	fwd = f.normalized() if f.length() > 0.01 else Vector3.FORWARD
-	side = fwd.cross(Vector3.UP).normalized()
-	center = Vector3(hp.x, battle.floor_y, hp.z) + fwd * 2.0
+	# Everything happens in the battle area in front of the player.
+	fwd = battle.arena_fwd
+	side = battle.arena_side
+	center = battle.arena_center
 	mode = "intro"
 	t = 0.0
 	_intro_t = 0.0
 	_damage0 = battle.plane.damage_taken
 	var m := Missions.get_m(i)
-	_show_card(str(i + 1), Missions.text(m, "title"), Lang.t("take_off_hint"), 3.4)
+	var line := Lang.t("take_off_hint") if not battle.plane.airborne() else "★★ %s   ★★★ %s" % [Missions.text(m, "s2"), Missions.text(m, "s3")]
+	_show_card(str(i + 1), Missions.text(m, "title"), line, 3.4)
 	battle.hud.set_wave(i, false)
 	battle.audio.play_music("boss" if id == "giant" else "battle")
 	battle.cue("siren", battle.head_position() + Vector3(0, 0.5, 0), -8.0)
@@ -76,7 +80,7 @@ func tick(delta: float) -> void:
 		"intro":
 			_intro_t += delta
 			objective = Lang.t("take_off_hint")
-			if battle.plane.airborne() and _intro_t > 1.0:
+			if battle.plane.airborne() and _intro_t > (2.6 if continuing else 1.0):
 				mode = "play"
 				t = 0.0
 				if not id in ["convoy", "base", "airfield"]:
@@ -437,17 +441,19 @@ func _play_giant(delta: float) -> void:
 
 # --- helpers -------------------------------------------------------------------------------------------
 
+## Enemy planes come in from far ahead, toward the player's front.
 func _fly_in(kind: String, k: int) -> Enemy:
-	var hp: Vector3 = battle.head_position()
-	var a := _rng.randf() * TAU + k * 0.8
-	var at := Vector3(hp.x + cos(a) * 4.8, battle.floor_y + _rng.randf_range(1.3, 2.1), hp.z + sin(a) * 4.8)
-	var e: Enemy = battle.spawn_at(kind, at, (Vector3(hp.x, at.y, hp.z) - at).normalized())
+	var at: Vector3 = battle.arena_entry(k)
+	var to := center + Vector3(0, at.y - center.y, 0) - at
+	to.y = 0.0
+	var e: Enemy = battle.spawn_at(kind, at, to.normalized())
 	e.practice = kind in ["fighter", "ace"]
 	return e
 
 
 ## A two-man anti-air team runs in and sets up its launcher.
 func _sam_team(at: Vector3) -> Enemy:
+	at = battle.clamp_front(at)
 	var hp: Vector3 = battle.head_position()
 	var e: Enemy = battle.spawn_at("sam", at, (Vector3(hp.x, at.y, hp.z) - at))
 	e.reload_mult = 0.75 if str(Profile.get_s("difficulty")) == "hard" else 1.0
@@ -531,6 +537,22 @@ func _show_card(badge: String, title: String, line: String, seconds: float) -> v
 	_card.add_child(gl)
 	_card.scale = Vector3.ONE * 0.01
 	_card_t = seconds
+
+
+## In the air between missions: the stars won and the gold, then onward.
+func show_result(stars: int, gold: int) -> void:
+	_show_card(str(index + 1), Lang.t("mission_complete"), "+%d %s" % [gold, Lang.t("coins")], 3.2)
+	for k in range(3):
+		var st := UI.icon("star", Color(1.0, 0.8, 0.15) if k < stars else Color(0.4, 0.4, 0.42), 0.06, 0.006)
+		st.position = Vector3(-0.08 + k * 0.08, -0.1, 0.01)
+		_card.add_child(st)
+	if index + 1 < Missions.LIST.size():
+		var nx := UI.number(Lang.t("next_up") % Missions.text(Missions.get_m(index + 1), "title"), 50, Color(0.85, 0.9, 1.0), false)
+		nx.pixel_size = 0.00055
+		nx.position = Vector3(0, -0.15, 0)
+		_card.add_child(nx)
+	for st2 in range(stars):
+		battle.cue("star", battle.head_position(), 2.0 - st2)
 
 
 func _update_card(delta: float) -> void:

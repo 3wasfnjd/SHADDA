@@ -395,7 +395,7 @@ func _tick_fighter(delta: float) -> void:
 		if to.length() < 0.45 or _mode_t < -6.0:
 			_mode = "extend"
 			_mode_t = _rng.randf_range(1.4, 2.4)
-			_goal = WarMath.clamp_into(flight.pos + flight.fwd * 1.6 + Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-0.3, 0.4), _rng.randf_range(-1, 1)), battle.box, 0.5, 0.6)
+			_goal = battle.clamp_front(flight.pos + flight.fwd * 1.6 + Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-0.3, 0.4), _rng.randf_range(-1, 1)))
 	elif _mode_t <= 0.0:
 		_mode = "attack"
 		_mode_t = 0.0
@@ -441,16 +441,13 @@ func _tick_sparring(delta: float) -> void:
 		else:
 			_mode = "wander"
 			_mode_t = _rng.randf_range(2.0, 3.5)
-			var a := _rng.randf() * TAU
-			_goal = head + Vector3(cos(a), 0, sin(a)) * _rng.randf_range(1.5, 4.0)
+			_goal = battle.arena_random()
 	if _mode == "attack":
 		_goal = you + battle.player_velocity() * 0.4
-	# Stay in sight: no further than ~5 m from the player's head.
+	# Stay in the battle area in front of the player (never behind the headset).
+	if _mode != "attack":
+		_goal = battle.clamp_front(_goal)
 	_goal.y = clampf(_goal.y, battle.floor_y + 0.7, battle.floor_y + 2.6)
-	var off := Vector2(_goal.x - head.x, _goal.z - head.z)
-	if off.length() > 4.5:
-		off = off.normalized() * 4.5
-		_goal = Vector3(head.x + off.x, _goal.y, head.z + off.y)
 	var ace := kind == "ace"
 	var spd := (1.55 if ace else 1.4) if _mode == "evade" else (1.3 if ace else 1.15)
 	flight = WarMath.fly(flight, _goal, spd, delta, battle.box, (3.0 if ace else 2.4) if _mode == "evade" else (2.4 if ace else 1.9))
@@ -514,10 +511,18 @@ func _tick_bomber(delta: float) -> void:
 	var c: Vector3 = battle.box_center()
 	var lo: Vector3 = battle.box.min
 	var hi: Vector3 = battle.box.max
-	var rx := minf(2.4, maxf(0.55, (hi.x - lo.x) * 0.5 - 0.6))
-	var rz := minf(2.4, maxf(0.55, (hi.z - lo.z) * 0.5 - 0.6))
-	var ang := atan2(flight.pos.z - c.z, flight.pos.x - c.x) + 0.6
-	_goal = Vector3(c.x + cos(ang) * rx, minf(hi.y - 0.45, battle.floor_y + 1.9), c.z + sin(ang) * rz)
+	if battle.free_flight:
+		# Laps across the front: wide side to side, shallow in depth.
+		var cc: Vector3 = battle.arena_center + battle.arena_fwd * 0.4
+		var d: Vector3 = flight.pos - cc
+		var ang2 := atan2(d.dot(battle.arena_fwd) / 1.1, d.dot(battle.arena_side) / 2.0) + 0.5
+		_goal = cc + battle.arena_side * cos(ang2) * 2.0 + battle.arena_fwd * sin(ang2) * 1.1
+		_goal.y = battle.floor_y + 1.9
+	else:
+		var rx := minf(2.4, maxf(0.55, (hi.x - lo.x) * 0.5 - 0.6))
+		var rz := minf(2.4, maxf(0.55, (hi.z - lo.z) * 0.5 - 0.6))
+		var ang := atan2(flight.pos.z - c.z, flight.pos.x - c.x) + 0.6
+		_goal = Vector3(c.x + cos(ang) * rx, minf(hi.y - 0.45, battle.floor_y + 1.9), c.z + sin(ang) * rz)
 	flight = WarMath.fly(flight, _goal, 0.55, delta, battle.box, 0.9)
 	flight.bank *= 0.6
 	_pose_from_flight()
@@ -679,6 +684,8 @@ func _tick_diver(delta: float) -> void:
 				_mode = "dive"
 				battle.cue("dive", me, 2.0)
 				battle.callout(Lang.t("dive_warn"), Color(1.0, 0.45, 0.25), 1.0)
+	if _mode != "dive":
+		_goal = battle.clamp_front(_goal)
 	_goal.y = clampf(_goal.y, battle.floor_y + 0.1, battle.floor_y + 2.6)
 	flight = WarMath.fly(flight, _goal, spd, delta, battle.box, turn)
 	_pose_from_flight()
@@ -807,7 +814,7 @@ func _tick_soldier(delta: float) -> void:
 	var flat := Vector3(to_p.x, 0, to_p.z)
 	if flat.length() > 0.01:
 		var want := Basis.looking_at(flat.normalized(), Vector3.UP)
-		global_basis = global_basis.slerp(want, minf(1.0, delta * 4.0))
+		global_basis = global_basis.orthonormalized().slerp(want, minf(1.0, delta * 4.0)).orthonormalized()
 	(parts.arms as Node3D).rotation.x = lerpf((parts.arms as Node3D).rotation.x, clampf(atan2(to_p.y, flat.length()), 0.0, 1.2), minf(1.0, delta * 4.0))
 	_fire_t -= delta
 	if _fire_t <= 0.0 and battle.player_airborne() and to_p.length() < 3.5:

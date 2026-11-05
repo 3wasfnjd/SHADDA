@@ -627,6 +627,28 @@ func apply_loadout() -> void:
 	refresh_stores()
 
 
+## Hangar changes during a sortie (from the pause menu) or between missions:
+## re-equip without repairing or resetting the hull record.
+func refresh_loadout() -> void:
+	var keep_hp := hp
+	var keep_taken := damage_taken
+	var keep_r := rockets
+	var keep_b := bombs
+	var keep_sp := special
+	apply_loadout()
+	hp = keep_hp
+	damage_taken = keep_taken
+	rockets = mini(keep_r, rocket_max)
+	bombs = mini(keep_b, special_max) if keep_sp == special else special_max
+	refresh_stores()
+
+
+func rearm() -> void:
+	rockets = rocket_max
+	bombs = special_max
+	refresh_stores()
+
+
 func reset_upgrades() -> void:
 	gun_kind = "twin"
 	special = "bombs"

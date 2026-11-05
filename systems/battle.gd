@@ -43,6 +43,24 @@ var _callout: Label3D
 var _callout_t: float = 0.0
 var _warn_t: float = 0.0
 var dusk: bool = false
+# One continuous sortie: missions follow each other in the air, no menus between.
+var sortie_from: int = 0
+var missions_done: int = 0
+var sortie_stars: int = 0
+var sortie_gold: int = 0
+var _next_t: float = -1.0
+var _next_retry: bool = false
+var _mission_score0: int = 0
+var _behind_t: float = 0.0
+# The battle area is a box in front of the player, never behind the headset.
+var arena_origin: Vector3 = Vector3.ZERO
+var arena_fwd: Vector3 = Vector3.FORWARD
+var arena_side: Vector3 = Vector3.RIGHT
+var arena_center: Vector3 = Vector3(0, 0, -2.2)
+const ARENA_SIDE := 2.6
+const ARENA_NEAR := 1.0
+const ARENA_FAR := 4.6
+var _arena_marks: Array = []
 var _low_warned: bool = false
 signal dusk_changed(on: bool)
 var hands: Array = []            # XRControllers for rumble (optional)
@@ -283,6 +301,14 @@ func start_mission(i: int) -> void:
 	var diff := str(Profile.get_s("difficulty"))
 	enemy_damage = {"easy": 0.6, "normal": 1.0, "hard": 1.4}.get(diff, 1.0)
 	plane.invincible = diff == "easy"
+	sortie_from = mission_index
+	missions_done = 0
+	sortie_stars = 0
+	sortie_gold = 0
+	_next_t = -1.0
+	_mission_score0 = 0
+	if free_flight:
+		_set_arena()
 	if plane.state != PlayerPlane.State.PARKED:
 		plane.park(park_spot, park_heading, park_spot.y)
 	score = 0
@@ -336,6 +362,8 @@ func resume() -> void:
 	if menus:
 		menus.close()
 	_unpause()
+	if phase == Phase.PLAYING:
+		plane.refresh_loadout()
 
 
 func _unpause() -> void:
@@ -348,13 +376,38 @@ func mission_over(victory: bool, stars: int, why: String) -> void:
 	if phase != Phase.PLAYING:
 		return
 	var crashed := why == "plane_lost"
+	var m0 := Missions.get_m(mission_index)
+	var last := mission_index >= Missions.LIST.size() - 1
+	if free_flight and campaign and not crashed:
+		if victory:
+			# Bank this mission and fly straight on to the next one.
+			var mult0 := 1.5 if str(Profile.get_s("difficulty")) == "hard" else 1.0
+			var gold := Profile.record(m0.id, stars, score - _mission_score0, mult0)
+			missions_done += 1
+			sortie_stars += stars
+			sortie_gold += gold
+			cue("win", head_position(), -4.0)
+			if not last:
+				campaign.show_result(stars, gold)
+				_next_t = 3.4
+				_next_retry = false
+				return
+		else:
+			# Objective lost: the same challenge again, still in the air.
+			_next_t = 3.0
+			_next_retry = true
+			return
 	won = victory
 	var hull := int(round(clampf(plane.hp / WarMath.PLANE_HP, 0.0, 1.0) * 100.0))
 	var t := campaign.t if campaign else 0.0
 	var acc := int(round(100.0 * shots_hit / maxf(1.0, shots_fired)))
 	var m := Missions.get_m(mission_index)
-	var result := {"index": mission_index, "won": victory, "stars": stars, "score": score, "time": t, "kills": kills, "accuracy": acc, "hull": hull, "reason": "plane_lost" if crashed else "", "why": why}
-	if victory:
+	var result := {"index": mission_index, "won": victory, "stars": stars, "score": score, "time": t, "kills": kills, "accuracy": acc, "hull": hull, "reason": "plane_lost" if crashed else "", "why": why,
+		"missions": missions_done, "sortie_stars": sortie_stars, "gold": sortie_gold, "sortie": free_flight}
+	if victory and free_flight:
+		result["coins"] = sortie_gold
+		result["record"] = false
+	elif victory:
 		var best := int(Profile.mission(m.id).get("best", 0))
 		result["record"] = score > best and best > 0
 		var mult := 1.5 if str(Profile.get_s("difficulty")) == "hard" else 1.0
@@ -369,6 +422,95 @@ func mission_over(victory: bool, stars: int, why: String) -> void:
 	plane.park(park_spot, park_heading, park_spot.y)
 	if menus:
 		menus.open("debrief" if victory else "failed", result)
+
+
+## Next mission (or the same one again) without landing or menus.
+func _advance(i: int) -> void:
+	mission_index = clampi(i, 0, Missions.LIST.size() - 1)
+	for e in enemies.duplicate():
+		if is_instance_valid(e):
+			Fx.smoke(self, e.hit_center(), 0.04)
+			e.queue_free()
+	enemies.clear()
+	for f in friends:
+		if is_instance_valid(f):
+			Fx.smoke(self, f.hit_center(), 0.05)
+			f.queue_free()
+	friends.clear()
+	for s in shots:
+		if s.hostile:
+			s.dead = true
+	plane.refresh_loadout()
+	plane.repair(35.0)
+	plane.rearm()
+	_mission_score0 = score
+	_low_warned = false
+	campaign.clear()
+	campaign.begin(self, mission_index, true)
+
+
+## The battle box in front of the player: set once when the sortie starts.
+func _set_arena() -> void:
+	var hp := head_position()
+	var f := -(head as Node3D).global_basis.z if head else Vector3.FORWARD
+	f.y = 0.0
+	arena_fwd = f.normalized() if f.length() > 0.05 else Vector3.FORWARD
+	arena_side = arena_fwd.cross(Vector3.UP).normalized()
+	arena_origin = Vector3(hp.x, floor_y, hp.z)
+	arena_center = arena_origin + arena_fwd * 2.4
+	for m in _arena_marks:
+		if is_instance_valid(m):
+			m.queue_free()
+	_arena_marks.clear()
+	# Four amber corner brackets on the floor show where the fight is.
+	for sx: float in [-1.0, 1.0]:
+		for fz: float in [ARENA_NEAR, ARENA_FAR]:
+			var holder := Node3D.new()
+			add_child(holder)
+			holder.global_position = arena_origin + arena_side * sx * ARENA_SIDE + arena_fwd * fz + Vector3(0, 0.003, 0)
+			holder.global_basis = Basis.looking_at(-arena_fwd, Vector3.UP)
+			var inward_x := -sx
+			var inward_z := 1.0 if fz == ARENA_NEAR else -1.0
+			var mat := Toon.flat(Color(1.0, 0.72, 0.2, 0.55))
+			Toon.add(holder, Toon.block(Vector3(0.3, 0.002, 0.025)), mat, Vector3(inward_x * 0.15, 0, 0))
+			Toon.add(holder, Toon.block(Vector3(0.025, 0.002, 0.3)), mat, Vector3(0, 0, -inward_z * 0.15))
+			_arena_marks.append(holder)
+
+
+## Keeps a point inside the battle area in front of the player.
+func clamp_front(p: Vector3) -> Vector3:
+	if not free_flight:
+		return WarMath.clamp_into(p, box, 0.5, 0.6)
+	var d := p - arena_origin
+	var s := clampf(d.dot(arena_side), -ARENA_SIDE, ARENA_SIDE)
+	var f := clampf(d.dot(arena_fwd), ARENA_NEAR, ARENA_FAR)
+	var y := clampf(p.y, floor_y + 0.5, floor_y + 2.6)
+	var out := arena_origin + arena_side * s + arena_fwd * f
+	out.y = y
+	return out
+
+
+func arena_random(height_lo: float = 0.9, height_hi: float = 2.2) -> Vector3:
+	var p := arena_origin + arena_side * _rng.randf_range(-ARENA_SIDE * 0.85, ARENA_SIDE * 0.85) + arena_fwd * _rng.randf_range(ARENA_NEAR + 0.4, ARENA_FAR - 0.3)
+	p.y = floor_y + _rng.randf_range(height_lo, height_hi)
+	return p
+
+
+## Where enemy planes appear: far ahead, spread across the front.
+func arena_entry(k: int) -> Vector3:
+	var s := clampf(_rng.randf_range(-2.2, 2.2) + (k - 1) * 0.6, -2.6, 2.6)
+	var p := arena_origin + arena_side * s + arena_fwd * _rng.randf_range(5.0, 5.8)
+	p.y = floor_y + _rng.randf_range(1.3, 2.1)
+	return p
+
+
+func _check_behind(delta: float) -> void:
+	_behind_t -= delta
+	if not plane.airborne() or _behind_t > 0.0:
+		return
+	if (plane.global_position - arena_origin).dot(arena_fwd) < 0.2:
+		_behind_t = 4.0
+		callout(Lang.t("back_front"), Color(1.0, 0.75, 0.3), 2.0)
 
 
 ## A big line of text floating ahead of the eyes for a moment.
@@ -507,7 +649,13 @@ func _physics_process(delta: float) -> void:
 				_finish(false)
 		return
 	if campaign:
+		if _next_t >= 0.0:
+			_next_t -= delta
+			if _next_t < 0.0:
+				_advance(mission_index if _next_retry else mission_index + 1)
+				return
 		campaign.tick(delta)
+		_check_behind(delta)
 		return
 	if not _waves_started:
 		return

@@ -164,17 +164,29 @@ func _wallet(p: Panel3D, pos: Vector2) -> void:
 # --- screens --------------------------------------------------------------------------------
 
 func _main() -> void:
-	var p := _new(0.74, 0.64)
-	p.label(Lang.t("game"), Vector2(0, 0.2), 310, Panel3D.GOLD, "title")
-	p.label("SAQR" if Lang.code() == "ar" else "صقر", Vector2(0, 0.105), 60, Panel3D.HEADER.lightened(0.25), "title")
-	p.label(Lang.t("tagline"), Vector2(0, 0.06), 46, Panel3D.DIM)
-	var y := 0.0
-	var bs := Vector2(0.44, 0.066)
-	p.button(Lang.t("campaign"), Vector2(0, y), bs, func(): open("missions"), "primary", "play", 56)
-	p.button(Lang.t("hangar"), Vector2(0, y - 0.078), bs, func(): open("hangar"), "normal", "plane")
-	p.button(Lang.t("settings"), Vector2(0, y - 0.156), bs, func(): open("settings"), "normal", "gear")
-	p.button(Lang.t("controls"), Vector2(0, y - 0.228), Vector2(0.44, 0.054), func(): open("controls"), "ghost", "stick", 44)
-	_wallet(p, Vector2(0, -0.29))
+	var p := _new(0.74, 0.72)
+	p.label(Lang.t("game"), Vector2(0, 0.24), 310, Panel3D.GOLD, "title")
+	p.label("SAQR" if Lang.code() == "ar" else "صقر", Vector2(0, 0.145), 60, Panel3D.HEADER.lightened(0.25), "title")
+	p.label(Lang.t("tagline"), Vector2(0, 0.1), 46, Panel3D.DIM)
+	var y := 0.035
+	var bs := Vector2(0.44, 0.064)
+	var nxt := _next_mission()
+	var fly := p.button("%s  ·  %d" % [Lang.t("fly"), nxt + 1], Vector2(0, y), bs, func(): _start(nxt), "primary", "play", 56)
+	fly.hint = Missions.text(Missions.get_m(nxt), "title")
+	p.button(Lang.t("missions_map"), Vector2(0, y - 0.074), bs, func(): open("missions"), "normal", "rings")
+	p.button(Lang.t("hangar"), Vector2(0, y - 0.148), bs, func(): open("hangar"), "normal", "plane")
+	p.button(Lang.t("settings"), Vector2(0, y - 0.222), bs, func(): open("settings"), "normal", "gear")
+	p.button(Lang.t("controls"), Vector2(0, y - 0.29), Vector2(0.44, 0.052), func(): open("controls"), "ghost", "stick", 44)
+	_wallet(p, Vector2(0, -0.325))
+
+
+## The first mission not finished yet (or the first, once all are done).
+func _next_mission() -> int:
+	var ids := Missions.ids()
+	for i in range(ids.size()):
+		if not bool(Profile.mission(ids[i]).get("done", false)):
+			return i
+	return 0
 
 
 func _missions() -> void:
@@ -289,7 +301,7 @@ func _hangar(tab: String) -> void:
 			_item_card(p, items[k], Vector2(p.sx(-0.384 + k * 0.192), -0.1), Vector2(0.182, 0.13))
 	var back_to := str(args.get("back", ""))
 	var idx := int(args.get("index", 0))
-	p.button(Lang.t("back"), Vector2(p.sx(-0.4), -0.315), Vector2(0.18, 0.06), func(): open("brief", {"index": idx}) if back_to == "brief" else open("main"), "ghost", "back", 44)
+	p.button(Lang.t("back"), Vector2(p.sx(-0.4), -0.315), Vector2(0.18, 0.06), func(): open("brief", {"index": idx}) if back_to == "brief" else open(back_to if back_to != "" else "main", {}, true), "ghost", "back", 44)
 	_hint = p.label(Lang.t("c_point"), Vector2(p.sx(0.1), -0.315), 38, Panel3D.DIM, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.62)
 
 
@@ -430,13 +442,14 @@ func _controls() -> void:
 
 
 func _pause() -> void:
-	var p := _new(0.5, 0.52, Lang.t("paused"))
-	var bs := Vector2(0.38, 0.068)
-	p.button(Lang.t("resume"), Vector2(0, 0.12), bs, func(): battle.resume(), "primary", "play", 52)
-	p.button(Lang.t("restart"), Vector2(0, 0.035), bs, func(): battle.restart_mission(), "normal", "retry", 46)
-	p.button(Lang.t("settings"), Vector2(0, -0.05), bs, func(): open("settings", {"back": "pause"}, true), "normal", "gear", 46)
-	p.button(Lang.t("controls"), Vector2(0, -0.135), bs, func(): open("controls", {"back": "pause"}, true), "normal", "stick", 46)
-	p.button(Lang.t("quit_menu"), Vector2(0, -0.215), bs, func(): battle.quit_to_menu(), "ghost", "home", 44)
+	var p := _new(0.5, 0.6, Lang.t("paused"))
+	var bs := Vector2(0.38, 0.064)
+	p.button(Lang.t("resume"), Vector2(0, 0.155), bs, func(): battle.resume(), "primary", "play", 52)
+	p.button(Lang.t("restart"), Vector2(0, 0.077), bs, func(): battle.restart_mission(), "normal", "retry", 46)
+	p.button(Lang.t("hangar"), Vector2(0, -0.001), bs, func(): open("hangar", {"back": "pause"}, true), "normal", "plane", 46)
+	p.button(Lang.t("settings"), Vector2(0, -0.079), bs, func(): open("settings", {"back": "pause"}, true), "normal", "gear", 46)
+	p.button(Lang.t("controls"), Vector2(0, -0.157), bs, func(): open("controls", {"back": "pause"}, true), "normal", "stick", 46)
+	p.button(Lang.t("quit_menu"), Vector2(0, -0.235), bs, func(): battle.quit_to_menu(), "ghost", "home", 44)
 
 
 func _debrief(r: Dictionary) -> void:
@@ -455,7 +468,7 @@ func _debrief(r: Dictionary) -> void:
 	_pop_t = 0.0
 	var stats := [
 		[Lang.t("score"), "%d" % int(r.get("score", 0))],
-		[Lang.t("time"), "%d:%02d" % [int(r.get("time", 0.0)) / 60, int(r.get("time", 0.0)) % 60]],
+		[Lang.t("missions_done"), "%d" % int(r.get("missions", 1))] if r.get("sortie", false) else [Lang.t("time"), "%d:%02d" % [int(r.get("time", 0.0)) / 60, int(r.get("time", 0.0)) % 60]],
 		[Lang.t("kills"), "%d" % int(r.get("kills", 0))],
 		[Lang.t("accuracy"), "%d%%" % int(r.get("accuracy", 0))],
 		[Lang.t("hull"), "%d%%" % int(r.get("hull", 100))],
@@ -490,7 +503,8 @@ func _failed(r: Dictionary) -> void:
 	p.label(why, Vector2(0, 0.07), 46, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.64)
 	p.label("%s %d · %s" % [Lang.t("mission"), i + 1, Missions.text(Missions.get_m(i), "title")], Vector2(0, 0.0), 40, Panel3D.DIM)
 	var y := -0.12
-	p.button(Lang.t("retry"), Vector2(p.sx(-0.2), y), Vector2(0.24, 0.072), func(): close(); battle.start_mission(i), "primary", "retry", 48)
+	p.button(Lang.t("retry"), Vector2(p.sx(-0.2), y), Vector2(0.24, 0.072), func(): close(); battle.start_mission(i), "primary", "retry", 40)
+	p.label(Lang.t("continue_from") % (i + 1), Vector2(p.sx(-0.2), y - 0.055), 34, Panel3D.DIM)
 	p.button(Lang.t("hangar"), Vector2(p.sx(0.06), y), Vector2(0.18, 0.065), func(): open("hangar", {"back": "brief", "index": i}), "normal", "plane", 42)
 	p.button(Lang.t("menu"), Vector2(p.sx(0.24), y), Vector2(0.14, 0.065), func(): battle.quit_to_menu(), "ghost", "home", 42)
 	if str(Profile.get_s("difficulty")) != "easy":
