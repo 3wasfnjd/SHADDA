@@ -90,4 +90,5 @@ render('win', 2.0, lambda t, u, r: sum(saw(t * f) for f in [392, 523, 659, 784][
 render('loss', 1.6, lambda t, u, r: saw(t * (330 - 200 * u)) * 0.4 * min(1.0, t / 0.02) * (1 - u) ** 0.8)
 render('pickup', 0.4, lambda t, u, r: math.sin(math.tau * (660 + 900 * u) * t) * 0.5 * env(t, u, 0.003, 0.9))
 render('click', 0.08, lambda t, u, r: math.sin(math.tau * 900 * t) * env(t, u, 0.001, 2.0))
+render('alarm', 0.9, lambda t, u, r: (1 if math.sin(math.tau * (880 if (t * 6) % 1 < 0.5 else 660) * t) > 0 else -1) * 0.3 * min(1, t / 0.01) * (1 - u) ** 0.3)
 print('Generated cues and engine loops in', out)

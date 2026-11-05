@@ -4,7 +4,7 @@ extends Node3D
 ## window (planes, tanks), on a real surface (balloons) or where a supply
 ## crate lands (flak guns), and ticks them each physics frame.
 
-enum State { ENTER, ACTIVE, ESCAPED, DEAD }
+enum State { ENTER, ACTIVE, ESCAPED, DEAD, FALLING }
 
 var kind: String = "fighter"
 var hp: float = 1.0
@@ -21,6 +21,19 @@ var entry: Dictionary = {}          # the opening it came through {center, norma
 var anchor: Vector3 = Vector3.ZERO  # balloons: cable anchor on a surface
 var drops: Array = []               # transport: points to drop crates over
 var practice: bool = false          # free-flight sparring partner: evades when chased
+var path: Array = []                # convoy route on the floor (trucks, tanks)
+var path_speed: float = 0.2
+var target_marked: bool = false     # a mission objective (shows a marker)
+var sam_phase: String = "idle"      # SAM team: idle → prep (2 s, telegraphed) → fire
+var sam_t: float = 0.0
+var reload_mult: float = 1.0
+var crew: Array = []                # soldiers around a SAM launcher
+var _warn: Label3D
+var _aim_line: MeshInstance3D
+var _aim_mesh := ImmediateMesh.new()
+var _fall_spin: float = 0.0
+var _walk: float = 0.0
+var run_to: Vector3 = Vector3.INF
 var _mode: String = "attack"
 var _mode_t: float = 0.0
 var _goal: Vector3 = Vector3.ZERO
@@ -64,13 +77,47 @@ func _ready() -> void:
 			parts = Models.aa_gun()
 		"balloon":
 			parts = Models.balloon()
+		"ace":
+			parts = Models.fighter(Models.ACE, 0.002)
+			parts.root.scale = Vector3.ONE * 0.95
+			for g in parts.gear:
+				(g as Node3D).rotation.x = -1.45
+			practice = true
+		"soldier":
+			parts = Models.soldier("rifle")
+		"sam":
+			parts = Models.launcher()
+			for i in range(2):
+				var c := Models.soldier("crew")
+				c.root.position = Vector3(-0.035 + i * 0.07, 0, 0.045)
+				c.root.rotation.y = PI * (0.15 if i == 0 else -0.15)
+				parts.root.add_child(c.root)
+				crew.append(c)
+			_warn = UI.number("!", 150, Color(1.0, 0.2, 0.1))
+			_warn.position = Vector3(0, 0.16, 0)
+			_warn.visible = false
+			parts.root.add_child(_warn)
+			_aim_line = MeshInstance3D.new()
+			_aim_line.mesh = _aim_mesh
+			_aim_line.material_override = Toon.flat(Color(1.0, 0.15, 0.1, 0.8))
+			_aim_line.top_level = true
+			_aim_line.extra_cull_margin = 10.0
+			parts.root.add_child(_aim_line)
+			(parts.tube as Node3D).rotation.x = -0.15
+			sam_t = _rng.randf_range(1.5, 3.0)
+		"truck":
+			parts = Models.truck()
+		"radar":
+			parts = Models.radar()
+		"fuel":
+			parts = Models.fuel_tank()
 	add_child(parts.root)
-	if kind in ["fighter", "transport", "bomber", "balloon"]:
+	if kind in ["fighter", "ace", "transport", "bomber", "balloon"]:
 		_shadow = Toon.shadow_blob(radius * 2.6)
 		add_child(_shadow)
-	if kind in ["fighter", "transport", "bomber", "tank"]:
+	if kind in ["fighter", "ace", "transport", "bomber", "tank", "truck"]:
 		_engine = AudioStreamPlayer3D.new()
-		var s = load("res://assets/audio/" + ("tank_engine" if kind == "tank" else "enemy_engine") + ".wav")
+		var s = load("res://assets/audio/" + ("tank_engine" if kind in ["tank", "truck"] else "enemy_engine") + ".wav")
 		if s is AudioStreamWAV:
 			(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
 			(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
@@ -78,7 +125,7 @@ func _ready() -> void:
 		_engine.unit_size = 0.7 if kind != "bomber" else 1.4
 		_engine.max_distance = 7.0
 		_engine.volume_db = -20.0 if kind != "bomber" else -12.0
-		_engine.pitch_scale = {"fighter": 1.15, "transport": 0.8, "bomber": 0.6, "tank": 1.0}[kind]
+		_engine.pitch_scale = {"fighter": 1.15, "ace": 1.35, "transport": 0.8, "bomber": 0.6, "tank": 1.0, "truck": 1.25}[kind]
 		_engine.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
 		add_child(_engine)
 		if s:
@@ -95,6 +142,16 @@ func hit_center() -> Vector3:
 			return global_position + Vector3(0, 0.05, 0)
 		"balloon":
 			return (parts.body as Node3D).global_position
+		"soldier":
+			return global_position + Vector3(0, 0.035, 0)
+		"sam":
+			return global_position + Vector3(0, 0.045, 0)
+		"truck":
+			return global_position + Vector3(0, 0.045, 0)
+		"radar":
+			return global_position + Vector3(0, 0.2, 0)
+		"fuel":
+			return global_position + Vector3(0, 0.07, 0)
 	return global_position
 
 
@@ -194,9 +251,24 @@ func tick(delta: float) -> void:
 	hit_flash = maxf(0.0, hit_flash - delta * 6.0)
 	_flash()
 	var before := global_position
+	if state == State.FALLING:
+		_tick_falling(delta)
+		velocity = (global_position - before) / maxf(delta, 1e-4)
+		_animate(delta)
+		return
 	match kind:
-		"fighter":
+		"fighter", "ace":
 			_tick_fighter(delta)
+		"soldier":
+			_tick_soldier(delta)
+		"sam":
+			_tick_sam(delta)
+		"truck":
+			_tick_convoy(delta)
+		"radar":
+			(parts.dish as Node3D).rotate_y(delta * 1.8)
+		"fuel":
+			pass
 		"transport":
 			_tick_transport(delta)
 		"bomber":
@@ -353,8 +425,9 @@ func _tick_sparring(delta: float) -> void:
 	if off.length() > 4.5:
 		off = off.normalized() * 4.5
 		_goal = Vector3(head.x + off.x, _goal.y, head.z + off.y)
-	var spd := 1.15 if _mode == "evade" else 0.95
-	flight = WarMath.fly(flight, _goal, spd, delta, battle.box, 2.4 if _mode == "evade" else 1.9)
+	var ace := kind == "ace"
+	var spd := (1.55 if ace else 1.4) if _mode == "evade" else (1.3 if ace else 1.15)
+	flight = WarMath.fly(flight, _goal, spd, delta, battle.box, (3.0 if ace else 2.4) if _mode == "evade" else (2.4 if ace else 1.9))
 	_pose_from_flight()
 	_fire_t -= delta
 	if _burst > 0:
@@ -415,8 +488,8 @@ func _tick_bomber(delta: float) -> void:
 	var c: Vector3 = battle.box_center()
 	var lo: Vector3 = battle.box.min
 	var hi: Vector3 = battle.box.max
-	var rx := maxf(0.55, (hi.x - lo.x) * 0.5 - 0.6)
-	var rz := maxf(0.55, (hi.z - lo.z) * 0.5 - 0.6)
+	var rx := minf(2.4, maxf(0.55, (hi.x - lo.x) * 0.5 - 0.6))
+	var rz := minf(2.4, maxf(0.55, (hi.z - lo.z) * 0.5 - 0.6))
 	var ang := atan2(flight.pos.z - c.z, flight.pos.x - c.x) + 0.6
 	_goal = Vector3(c.x + cos(ang) * rx, minf(hi.y - 0.45, battle.floor_y + 1.9), c.z + sin(ang) * rz)
 	flight = WarMath.fly(flight, _goal, 0.55, delta, battle.box, 0.9)
@@ -453,6 +526,10 @@ func _tick_bomber(delta: float) -> void:
 
 
 func _tick_tank(delta: float) -> void:
+	if not path.is_empty():
+		_tick_convoy(delta)
+		_aim_and_fire(delta, parts.turret, parts.barrel, parts.muzzle, "shell", 3.2)
+		return
 	if state == State.ENTER:
 		var n: Vector3 = entry.normal
 		flight.pos += n * 0.22 * delta
@@ -525,3 +602,157 @@ func _tick_balloon(delta: float) -> void:
 	body.rotation.y = sin(age * 0.4) * 0.5
 	cable.position = body.position * 0.5
 	cable.basis = Basis(Quaternion(Vector3.UP, body.position.normalized())) * Basis.from_scale(Vector3(1, maxf(0.001, body.position.length()), 1))
+
+
+
+# --- campaign units --------------------------------------------------------------------------
+
+## Shot-down planes spiral down trailing smoke and blow up on the floor.
+func start_fall() -> void:
+	state = State.FALLING
+	_fall_spin = 0.0
+	if _engine:
+		_engine.pitch_scale *= 0.7
+
+
+func _tick_falling(delta: float) -> void:
+	_fall_spin += delta * 6.0
+	var fwd: Vector3 = flight.fwd
+	fwd = (fwd + Vector3(0, -1.4 * delta, 0)).normalized()
+	flight.fwd = fwd
+	flight.speed = minf(2.0, float(flight.speed) + delta * 1.2)
+	flight.pos += fwd * flight.speed * delta
+	global_position = flight.pos
+	global_basis = Basis.looking_at(fwd, Vector3.UP if absf(fwd.y) < 0.98 else Vector3.BACK) * Basis(Vector3.FORWARD, _fall_spin)
+	_smoke_t -= delta
+	if _smoke_t <= 0.0 and battle:
+		_smoke_t = 0.04
+		Fx.smoke(battle, global_position, radius * 0.25, true)
+		if randf() < 0.3:
+			Fx.sparks(battle, global_position, Vector3.UP, 2, Color(1.0, 0.6, 0.2))
+	if global_position.y <= battle.surface_below(global_position) + 0.03 or age > 12.0:
+		battle.on_wreck_landed(self)
+
+
+## Follows its convoy route along the floor; leaving the end = escaped.
+func _tick_convoy(delta: float) -> void:
+	if path.is_empty():
+		return
+	var goal: Vector3 = path[0]
+	var to := goal - global_position
+	to.y = 0.0
+	if to.length() < 0.05:
+		path.pop_front()
+		if path.is_empty():
+			state = State.ESCAPED
+		return
+	var f := -global_basis.z
+	f.y = 0.0
+	var nf := WarMath.steer(f.normalized() if f.length() > 0.01 else to.normalized(), to.normalized(), 2.0, delta)
+	global_position += nf * path_speed * delta
+	global_position.y = battle.surface_below(global_position + Vector3(0, 0.05, 0))
+	_face(nf)
+	if parts.has("wheels"):
+		for w in parts.wheels:
+			(w as Node3D).rotate_object_local(Vector3.RIGHT, -path_speed * delta / 0.015)
+	state = State.ACTIVE
+
+
+## Rifle soldier: runs to a spot, then stands and takes pot-shots at the plane.
+func _tick_soldier(delta: float) -> void:
+	state = State.ACTIVE
+	var legs: Array = parts.legs
+	if run_to != Vector3.INF:
+		var to := run_to - global_position
+		to.y = 0.0
+		if to.length() < 0.03:
+			run_to = Vector3.INF
+		else:
+			global_position += to.normalized() * 0.18 * delta
+			global_position.y = battle.surface_below(global_position + Vector3(0, 0.05, 0))
+			_face(to)
+			_walk += delta * 14.0
+			for i in range(legs.size()):
+				(legs[i] as Node3D).rotation.x = sin(_walk + PI * i) * 0.7
+			return
+	for l in legs:
+		(l as Node3D).rotation.x = 0.0
+	var to_p: Vector3 = battle.player_position() - global_position
+	var flat := Vector3(to_p.x, 0, to_p.z)
+	if flat.length() > 0.01:
+		var want := Basis.looking_at(flat.normalized(), Vector3.UP)
+		global_basis = global_basis.slerp(want, minf(1.0, delta * 4.0))
+	(parts.arms as Node3D).rotation.x = lerpf((parts.arms as Node3D).rotation.x, clampf(atan2(to_p.y, flat.length()), 0.0, 1.2), minf(1.0, delta * 4.0))
+	_fire_t -= delta
+	if _fire_t <= 0.0 and battle.player_airborne() and to_p.length() < 3.5:
+		_fire_t = _rng.randf_range(1.8, 3.2)
+		var dir := (to_p + Vector3(_rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.1, 0.2), _rng.randf_range(-0.2, 0.2))).normalized()
+		var from := global_position + Vector3(0, 0.045, 0) + dir * 0.03
+		battle.enemy_fire("ebullet", from, dir, Vector3.ZERO)
+		Fx.muzzle(battle, from, dir, 0.01)
+
+
+## Anti-air team: idle (reloading) → PREP for 2 s — the crew raises the tube,
+## a red "!" blinks overhead, a red aim line locks on and a beep speeds up —
+## → FIRE a homing missile you can outturn, barrel-roll past or shoot down.
+func _tick_sam(delta: float) -> void:
+	state = State.ACTIVE
+	var tube: Node3D = parts.tube
+	var mount: Node3D = parts.mount
+	var lamp := parts.lamp as MeshInstance3D
+	var you: Vector3 = battle.player_position()
+	var to := you - (parts.muzzle as Node3D).global_position
+	sam_t -= delta
+	match sam_phase:
+		"idle":
+			tube.rotation.x = lerpf(tube.rotation.x, -0.1, minf(1.0, delta * 3.0))
+			_warn.visible = false
+			_aim_line.visible = false
+			(lamp.material_override as ShaderMaterial).set_shader_parameter("albedo", Color(0.35, 0.06, 0.06))
+			for c in crew:
+				(c.arms as Node3D).rotation.x = lerpf((c.arms as Node3D).rotation.x, 0.0, minf(1.0, delta * 3.0))
+			if sam_t <= 0.0 and battle.player_airborne() and to.length() < 5.0:
+				sam_phase = "prep"
+				sam_t = WarMath.SAM_PREP
+				battle.cue("alarm", global_position, -2.0)
+		"prep":
+			var u := 1.0 - sam_t / WarMath.SAM_PREP
+			# Crew heaves the tube up and swings it onto the plane.
+			var local: Vector3 = global_transform.affine_inverse() * you
+			var yaw := atan2(-local.x, -local.z)
+			mount.rotation.y = lerp_angle(mount.rotation.y, yaw, minf(1.0, delta * 5.0))
+			var pitch := clampf(atan2(local.y - 0.04, Vector2(local.x, local.z).length()), 0.15, 1.4)
+			tube.rotation.x = lerpf(tube.rotation.x, pitch, minf(1.0, delta * 4.0))
+			for c in crew:
+				(c.arms as Node3D).rotation.x = 1.1
+			var period := lerpf(0.4, 0.1, u)
+			var on := fmod(age, period) < period * 0.5
+			_warn.visible = on
+			_warn.scale = Vector3.ONE * (1.0 + u * 0.6)
+			(lamp.material_override as ShaderMaterial).set_shader_parameter("albedo", Color(1.0, 0.15, 0.1) if on else Color(0.35, 0.06, 0.06))
+			_aim_line.visible = true
+			_aim_mesh.clear_surfaces()
+			_aim_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+			var a: Vector3 = (parts.muzzle as Node3D).global_position
+			for k in range(10):
+				var t0 := k / 10.0
+				_aim_mesh.surface_add_vertex(a.lerp(you, t0))
+				_aim_mesh.surface_add_vertex(a.lerp(you, t0 + 0.05))
+			_aim_mesh.surface_end()
+			_beep_t -= delta
+			if _beep_t <= 0.0:
+				_beep_t = period
+				battle.cue("lock", global_position, -6.0)
+			if sam_t <= 0.0:
+				sam_phase = "idle"
+				sam_t = _rng.randf_range(4.0, 6.0) * reload_mult
+				_warn.visible = false
+				_aim_line.visible = false
+				var m: Node3D = parts.muzzle
+				var s: Shot = battle.enemy_fire("sam", m.global_position, -m.global_basis.z, Vector3.ZERO)
+				if s:
+					s.target = battle.plane
+				Fx.muzzle(battle, m.global_position, -m.global_basis.z, 0.03)
+				Fx.smoke(battle, m.global_position + m.global_basis.z * 0.08, 0.03)
+				battle.cue("rocket", m.global_position)
+var _beep_t: float = 0.0

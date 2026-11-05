@@ -36,6 +36,22 @@ func _run() -> void:
 	var items := {
 		"player_glb": func(): return Models.player_plane().root,
 		"player": func(): return Models.fighter(Models.PLAYER).root,
+		"ace": func(): return Models.fighter(Models.ACE).root,
+		"soldier": func(): return Models.soldier("rifle").root,
+		"sam_team": func():
+			var r := Node3D.new()
+			var l2 := Models.launcher()
+			r.add_child(l2.root)
+			(l2.tube as Node3D).rotation.x = 0.8
+			for i in 2:
+				var sd := Models.soldier("crew")
+				sd.root.position = Vector3(-0.03 + i * 0.06, 0, 0.04)
+				r.add_child(sd.root)
+			return r,
+		"truck": func(): return Models.truck().root,
+		"radar": func(): return Models.radar().root,
+		"fuel": func(): return Models.fuel_tank().root,
+		"ring": func(): return Models.ring().root,
 		"enemy_fighter": func(): return Models.fighter(Models.ENEMY).root,
 		"transport": func(): return Models.transport().root,
 		"bomber": func(): return Models.bomber().root,

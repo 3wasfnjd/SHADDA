@@ -140,7 +140,7 @@ func _process(delta: float) -> void:
 		battle.hands = controllers
 		plane.visible = true
 		if preview:
-			battle.on_room_ready(PREVIEW_ROOM.duplicate(true))
+			battle.on_room_ready(_free_flight_room() if preview_mode.begins_with("s") else PREVIEW_ROOM.duplicate(true))
 		else:
 			if ROOM_SCAN:
 				room_scan = RoomScan.new()
@@ -167,7 +167,7 @@ func _process(delta: float) -> void:
 		inp = {
 			"throttle_delta": _dead(ls.y),
 			"yaw": _dead(ls.x),
-			"pitch": -_dead(rs.y),          # pull back = nose up
+			"pitch": _dead(rs.y),           # stick up = climb / take off, down = descend / land
 			"roll": _dead(rs.x),
 			"boost": controllers[0].get_float("trigger") > 0.5,
 			"brake": controllers[0].get_float("grip") > 0.5,
@@ -224,6 +224,16 @@ static var PREVIEW_ROOM := {
 
 
 func _preview_room_visuals() -> void:
+	if preview_mode.begins_with("s"):
+		var fm := StandardMaterial3D.new()
+		fm.albedo_color = Color(0.6, 0.5, 0.38)
+		var fl0 := MeshInstance3D.new()
+		var fp0 := PlaneMesh.new()
+		fp0.size = Vector2(20, 20)
+		fl0.mesh = fp0
+		fl0.material_override = fm
+		add_child(fl0)
+		return
 	var wall_m := StandardMaterial3D.new()
 	wall_m.albedo_color = Color(0.86, 0.84, 0.8)
 	wall_m.roughness = 0.95
@@ -268,6 +278,8 @@ func _preview_room_visuals() -> void:
 ## Scripted flights for the screenshots. Returns [trigger_r, grip_r, trigger_l].
 func _preview_input(delta: float) -> Array:
 	preview_t += delta
+	if preview_mode.begins_with("s"):
+		return _preview_campaign(delta)
 	var out: Array = [0.0, 0.0, {}]
 	var aim := aims[1]
 	var point := Vector3(0, 1.2, -1.0)
@@ -330,6 +342,55 @@ func _preview_input(delta: float) -> Array:
 		var name: String = shots[preview_shots][1]
 		preview_shots += 1
 		_capture(name, preview_shots >= shots.size())
+	return out
+
+
+## SAQR_PREVIEW=s1..s5: jump into a campaign stage over a plain floor and
+## fly the autopilot at its objectives for screenshots.
+var _jumped := false
+func _preview_campaign(delta: float) -> Array:
+	var out: Array = [0.0, 0.0, {}]
+	var n := int(preview_mode.substr(1)) - 1
+	if battle.phase == Battle.Phase.MENU:
+		if preview_t > 0.6:
+			battle.start_match()
+		return out
+	var c: Campaign = battle.campaign
+	if c == null:
+		return out
+	if not _jumped:
+		_jumped = true
+		for k in range(n):
+			plane.apply_upgrade(["engine", "guns", "rockets", "armor"][k])
+		c._start_stage(n)
+		var f := -head.global_basis.z
+		f.y = 0
+		plane.flight = {"pos": head.global_position + f.normalized() * 1.2 + Vector3(0, -0.3, 0), "basis": Basis.looking_at(f.normalized(), Vector3.UP), "speed": 1.2, "sink": 0.0, "ground": false}
+		c.t = 3.5
+		preview_t = 0.0
+	var goal := c.center + Vector3(0, 1.3, 0)
+	if c._ring_i < c._rings.size():
+		goal = c._rings[c._ring_i].pos
+	else:
+		var best := INF
+		for e in battle.enemies:
+			if e.alive() and e.state == Enemy.State.ACTIVE:
+				var d: float = e.hit_center().distance_to(plane.global_position)
+				if d < best:
+					best = d
+					goal = e.hit_center() + (Vector3(0, 0.7, 0) if e.kind in ["tank", "truck", "sam", "soldier", "fuel", "radar", "aa"] else Vector3.ZERO)
+	out[0] = 1.0 if preview_t > 3.0 and fmod(preview_t, 1.4) < 0.8 else 0.0
+	out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75)
+	if plane.airborne() and preview_mode != "s1":
+		if fmod(preview_t, 4.0) < delta:
+			plane.drop_bomb()
+	var want := Basis.looking_at((plane.global_position.lerp(goal, 0.3) - head.global_position).normalized(), Vector3.UP)
+	head.global_basis = head.global_basis.slerp(want, minf(1.0, delta * 2.5))
+	aims[1].global_transform = Transform3D(head.global_basis, controllers[1].global_position)
+	var times := [0.4, 2.5, 5.0, 7.5, 10.0, 12.5]
+	if preview_shots < times.size() and preview_t >= times[preview_shots]:
+		preview_shots += 1
+		_capture("%s_%d" % [preview_mode, preview_shots], preview_shots >= times.size())
 	return out
 
 

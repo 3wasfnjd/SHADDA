@@ -56,6 +56,27 @@ static func icon_shape(kind: String) -> PackedVector2Array:
 			for p in s:
 				flipped.append(Vector2(p.x, -p.y))
 			return flipped
+		"engine":
+			var g := PackedVector2Array()
+			for i in range(16):
+				var a := TAU * i / 16.0
+				var r := 0.45 if i % 2 == 0 else 0.32
+				g.append(Vector2(cos(a), sin(a)) * r)
+			return g
+		"guns":
+			return PackedVector2Array([Vector2(-0.45, -0.12), Vector2(0.45, -0.12), Vector2(0.45, 0.12), Vector2(-0.1, 0.12), Vector2(-0.18, 0.4), Vector2(-0.38, 0.4), Vector2(-0.3, 0.12), Vector2(-0.45, 0.12)])
+		"rockets":
+			return PackedVector2Array([Vector2(0, 0.48), Vector2(0.14, 0.25), Vector2(0.14, -0.2), Vector2(0.3, -0.42), Vector2(-0.3, -0.42), Vector2(-0.14, -0.2), Vector2(-0.14, 0.25)])
+		"armor":
+			return PackedVector2Array([Vector2(0, 0.46), Vector2(0.38, 0.32), Vector2(0.34, -0.1), Vector2(0, -0.46), Vector2(-0.34, -0.1), Vector2(-0.38, 0.32)])
+		"cluster":
+			var c := PackedVector2Array()
+			for i in range(20):
+				var a := TAU * i / 20.0
+				c.append(Vector2(cos(a) * 0.3, sin(a) * 0.3 - 0.08))
+			c.insert(5, Vector2(0.08, 0.45))
+			c.insert(6, Vector2(-0.08, 0.45))
+			return c
 		"plane":
 			return PackedVector2Array([Vector2(0, 0.45), Vector2(0.06, 0.2), Vector2(0.45, 0.05), Vector2(0.45, -0.05), Vector2(0.06, -0.05), Vector2(0.05, -0.3), Vector2(0.18, -0.38), Vector2(0.18, -0.45), Vector2(-0.18, -0.45), Vector2(-0.18, -0.38), Vector2(-0.05, -0.3), Vector2(-0.06, -0.05), Vector2(-0.45, -0.05), Vector2(-0.45, 0.05), Vector2(-0.06, 0.2)])
 	return PackedVector2Array([Vector2(-0.4, -0.4), Vector2(0.4, -0.4), Vector2(0.4, 0.4), Vector2(-0.4, 0.4)])

@@ -27,7 +27,8 @@ var score: int = 0
 var streak: int = 0
 var won: bool = false
 var auto_spawn: bool = true
-var free_flight: bool = false     # no enemies: practise takeoff, flying and landing
+var free_flight: bool = false     # no room scan: the campaign plays over the open floor
+var campaign: Campaign = null
 var hands: Array = []            # XRControllers for rumble (optional)
 var aim_origin: Vector3 = Vector3.ZERO
 var aim_dir: Vector3 = Vector3.FORWARD
@@ -241,9 +242,17 @@ func start_match() -> void:
 	hud.set_combo(1.0)
 	hud.set_wave(0, false)
 	_set_phase(Phase.PLAYING)
+	plane.reset_upgrades()
 	plane.start_engine()
 	cue("engine_start", plane.global_position)
 	audio.play_music("battle")
+	if campaign:
+		campaign.queue_free()
+		campaign = null
+	if free_flight:
+		campaign = Campaign.new()
+		add_child(campaign)
+		campaign.begin(self)
 
 
 func on_airborne() -> void:
@@ -292,7 +301,11 @@ func _physics_process(delta: float) -> void:
 	for e in enemies.duplicate():
 		if e.alive():
 			e.tick(delta)
+		elif e.state == Enemy.State.FALLING:
+			e.tick(delta)
 		if e.state == Enemy.State.ESCAPED:
+			if campaign:
+				campaign.on_escaped(e)
 			enemies.erase(e)
 			e.queue_free()
 	_step_pickups(delta)
@@ -319,8 +332,8 @@ func _physics_process(delta: float) -> void:
 			else:
 				_finish(false)
 		return
-	if free_flight:
-		_practice(delta)
+	if campaign:
+		campaign.tick(delta)
 		return
 	if not _waves_started:
 		return
@@ -391,6 +404,33 @@ func _finish(victory: bool) -> void:
 
 
 # --- spawning ---------------------------------------------------------------------------
+
+## Campaign spawns anywhere in the open: planes fly in from `pos` along
+## `facing`; ground units stand at `pos` on whatever surface is there.
+func spawn_at(kind: String, pos: Vector3, facing: Vector3) -> Enemy:
+	var e := Enemy.create(kind)
+	e.battle = self
+	add_child(e)
+	enemies.append(e)
+	var f := facing.normalized() if facing.length() > 0.01 else Vector3.FORWARD
+	match kind:
+		"fighter", "ace", "transport", "bomber":
+			e.enter_through({"center": pos + f * 0.55, "base": Vector3(pos.x, floor_y, pos.z), "normal": f, "width": 1.0, "height": 1.0})
+			cue("plane_in", pos, 2.0 if kind == "bomber" else 0.0)
+		"balloon":
+			var ground := surface_below(pos + Vector3(0, 0.5, 0))
+			e.set_meta("height", maxf(0.4, pos.y - ground))
+			e.rise_from(Vector3(pos.x, ground, pos.z))
+			cue("inflate", pos, -8.0)
+		_:
+			var g := surface_below(Vector3(pos.x, pos.y + 0.5, pos.z))
+			e.global_position = Vector3(pos.x, g, pos.z)
+			var flat := Vector3(f.x, 0, f.z)
+			if flat.length() > 0.01:
+				e.look_at(e.global_position + flat.normalized(), Vector3.UP)
+			e.state = Enemy.State.ACTIVE
+	return e
+
 
 func spawn(kind: String) -> Enemy:
 	var e := Enemy.create(kind)
@@ -472,6 +512,8 @@ func _step_crates(delta: float) -> void:
 
 func player_fire(kind: String, from: Vector3, dir: Vector3, inherit: Vector3, target) -> Shot:
 	var s := Shot.make(kind, from, dir, inherit if kind != "bullet" else inherit * 0.5)
+	if kind == "bullet":
+		s.damage *= plane.gun_damage
 	s.target = target
 	add_child(s)
 	shots.append(s)
@@ -484,7 +526,7 @@ func enemy_fire(kind: String, from: Vector3, dir: Vector3, inherit: Vector3 = Ve
 	var s := Shot.make(kind, from, dir, inherit)
 	add_child(s)
 	shots.append(s)
-	cue({"ebullet": "enemy_gun", "shell": "cannon", "flak": "flak_fire", "ebomb": "bomb_drop"}[kind], from, -8.0 if kind == "ebullet" else -3.0)
+	cue({"ebullet": "enemy_gun", "shell": "cannon", "flak": "flak_fire", "ebomb": "bomb_drop", "sam": "rocket"}[kind], from, -8.0 if kind == "ebullet" else -3.0)
 	return s
 
 
@@ -520,6 +562,13 @@ func _resolve(s: Shot) -> void:
 			var at: Vector3 = b if hit_e else w.position
 			_blast(at, WarMath.BOMB_RADIUS, WarMath.BOMB_DAMAGE, "bomb")
 			Fx.explosion(self, at + Vector3(0, 0.03, 0), 0.11)
+			if plane.cluster:
+				for k in range(4):
+					var off := Vector3(cos(k * PI * 0.5), 0, sin(k * PI * 0.5)) * 0.3
+					var at2: Vector3 = at + off
+					at2.y = surface_below(at2 + Vector3(0, 0.3, 0))
+					_blast(at2, WarMath.BOMB_RADIUS * 0.6, WarMath.BOMB_DAMAGE * 0.6, "bomb")
+					Fx.explosion(self, at2 + Vector3(0, 0.02, 0), 0.06)
 			Fx.mark(self, at, w.get("normal", Vector3.UP), 0.32)
 			cue("boom_big", at)
 			shake(0.6)
@@ -536,11 +585,22 @@ func _resolve(s: Shot) -> void:
 		if t >= 0.0 and t < best_t:
 			best_t = t
 			best_e = e
+	var best_shot: Shot = null
+	if s.kind == "bullet":
+		for o in shots:
+			if o.dead or not o.can_be_shot():
+				continue
+			var t3 := WarMath.segment_sphere(a, b, o.global_position, 0.035)
+			if t3 >= 0.0 and t3 < best_t:
+				best_t = t3
+				best_e = null
+				best_shot = o
 	for ci in range(crates.size()):
 		var t2 := WarMath.segment_sphere(a, b, (crates[ci].node as Node3D).global_position + Vector3(0, 0.03, 0), 0.06)
 		if t2 >= 0.0 and t2 < best_t:
 			best_t = t2
 			best_e = null
+			best_shot = null
 			best_c = ci
 	var w := wall_hit(a, b)
 	var wall_t := 2.0
@@ -549,6 +609,12 @@ func _resolve(s: Shot) -> void:
 	if best_t <= 1.0 and best_t < wall_t:
 		var at := a.lerp(b, best_t)
 		s.dead = true
+		if best_shot:
+			best_shot.dead = true
+			Fx.explosion(self, best_shot.global_position, 0.05)
+			cue("boom_small", at)
+			_add_score(60, at)
+			return
 		if best_c >= 0:
 			var c: Dictionary = crates[best_c]
 			Fx.explosion(self, (c.node as Node3D).global_position, 0.06)
@@ -612,14 +678,25 @@ func _resolve_hostile(s: Shot, a: Vector3, b: Vector3) -> void:
 					_hurt_plane(dmg2, at)
 				s.dead = true
 			return
-	if plane.alive() and WarMath.segment_sphere(a, b, pp, WarMath.PLANE_RADIUS) >= 0.0:
+	if s.kind == "sam" and s.target != null and plane.rolling() and pp.distance_to(b) < 0.45:
+		s.target = null    # a barrel roll at the last moment shakes the missile off
+		cue("whoosh", b)
+		_add_score(50, b)
+	if plane.alive() and WarMath.segment_sphere(a, b, pp, WarMath.PLANE_RADIUS + (0.03 if s.kind == "sam" else 0.0)) >= 0.0:
 		s.dead = true
+		if s.kind == "sam":
+			Fx.explosion(self, b, 0.06)
+			cue("boom_small", b)
 		_hurt_plane(s.damage, b)
 		Fx.sparks(self, b, (a - b).normalized(), 4, Color(1.0, 0.5, 0.3))
 		return
 	var w2 := wall_hit(a, b)
 	if not w2.is_empty():
 		s.dead = true
+		if s.kind == "sam":
+			Fx.explosion(self, w2.position, 0.06)
+			Fx.mark(self, w2.position, w2.normal, 0.12)
+			cue("boom_small", w2.position)
 		Fx.sparks(self, w2.position, w2.normal, 2)
 		Fx.mark(self, w2.position, w2.normal, 0.012, true)
 		return
@@ -628,7 +705,7 @@ func _resolve_hostile(s: Shot, a: Vector3, b: Vector3) -> void:
 
 
 func _hurt_plane(amount: float, at: Vector3) -> void:
-	if not plane.alive() or plane.invincible:
+	if not plane.alive():
 		return
 	plane.take_hit(amount)
 	cue("player_hit", at, -2.0)
@@ -652,8 +729,21 @@ func _kill(e: Enemy, weapon: String) -> void:
 	var mult := WarMath.combo(streak)
 	hud.set_combo(mult)
 	_add_score(WarMath.points(e.kind, mult, weapon), e.hit_center(), e.kind == "bomber")
-	if e.kind in ["fighter", "tank", "aa", "transport"] and _rng.randf() < 0.18:
+	if e.kind in ["fighter", "ace", "tank", "aa", "transport", "truck"] and _rng.randf() < 0.18:
 		_drop_repair(e.hit_center())
+	if campaign:
+		campaign.on_killed(e)
+	if e.kind in ["fighter", "ace", "transport"]:
+		# Shot-down planes spiral to the floor trailing smoke.
+		plane.locks.erase(e)
+		Fx.explosion(self, e.hit_center(), 0.04)
+		cue("engine_die", e.hit_center(), -4.0)
+		e.start_fall()
+		return
+	_explode(e)
+
+
+func on_wreck_landed(e: Enemy) -> void:
 	_explode(e)
 
 
@@ -670,10 +760,32 @@ func _explode(e: Enemy) -> void:
 			Fx.explosion(self, at, 0.25)
 			cue("boom_big", at, 6.0)
 			shake(1.0)
-		"tank", "aa":
-			Fx.explosion(self, at, 0.1)
+		"tank", "aa", "truck", "sam":
+			Fx.explosion(self, at, 0.1 if e.kind != "sam" else 0.07)
 			Fx.mark(self, Vector3(at.x, surface_below(at), at.z), Vector3.UP, 0.3)
 			cue("boom_big", at)
+			if e.kind == "truck":
+				# The crew jumps out and runs for cover.
+				for i in range(2):
+					var sd := spawn_at("soldier", e.global_position + Vector3(_rng.randf_range(-0.06, 0.06), 0, _rng.randf_range(-0.06, 0.06)), Vector3.FORWARD)
+					var a := _rng.randf() * TAU
+					sd.run_to = sd.global_position + Vector3(cos(a), 0, sin(a)) * 0.4
+		"soldier":
+			Fx.smoke(self, at, 0.03)
+			Fx.sparks(self, at, Vector3.UP, 4, Color(1.0, 0.8, 0.3))
+			cue("pop", at, -6.0)
+		"radar":
+			Fx.explosion(self, at, 0.14)
+			Fx.explosion(self, at + Vector3(0, 0.12, 0), 0.08)
+			cue("boom_big", at, 3.0)
+			shake(0.6)
+		"fuel":
+			Fx.explosion(self, at, 0.18)
+			Fx.mark(self, Vector3(at.x, surface_below(at), at.z), Vector3.UP, 0.45)
+			cue("boom_big", at, 4.0)
+			shake(0.8)
+			# Chain reaction: neighbours within 50 cm catch the blast.
+			call_deferred("_blast", at, 0.5, 10.0, "bomb", e)
 		_:
 			Fx.explosion(self, at, 0.08)
 			cue("boom_big", at)
@@ -789,12 +901,18 @@ func _build_menu() -> void:
 		root.add_child(st)
 
 
+func finish_campaign() -> void:
+	_finish(true)
+
+
 func _build_results() -> void:
 	var fwd := -head.global_basis.z if head else Vector3.FORWARD
 	fwd.y = 0.0
 	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
 	var root := _ui_at(head_position() + fwd * 1.1 + Vector3(0, -0.1, 0))
 	var stars := WarMath.stars(plane.hp / WarMath.PLANE_HP, won)
+	if campaign:
+		stars = clampi(int(round(campaign.total_stars() / 5.0)), 0, 3)
 	var record := score > int(save.get("best", 0))
 	save["best"] = maxi(int(save.get("best", 0)), score)
 	save["stars"] = maxi(int(save.get("stars", 0)), stars)
@@ -811,6 +929,9 @@ func _build_results() -> void:
 
 
 func _clear_battlefield() -> void:
+	if campaign:
+		campaign.queue_free()
+		campaign = null
 	for e in enemies:
 		e.queue_free()
 	enemies.clear()

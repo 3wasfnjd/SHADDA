@@ -8,11 +8,11 @@ const PLANE_RADIUS := 0.09
 const PLANE_SCALE := 0.7        # the player's plane: 24 cm span
 
 # --- manual (RC-style) flight: the player controls everything ------------------
-const THRUST := 2.0             # m/s² at full throttle
+const THRUST := 2.9             # m/s² at full throttle
 const BOOST_THRUST := 1.4
-const DRAG := 1.25              # top speed ≈ sqrt(THRUST/DRAG) ≈ 1.26 m/s
+const DRAG := 1.0               # top speed ≈ sqrt(THRUST/DRAG) ≈ 1.7 m/s
 const STALL := 0.5              # below this the wings stop lifting
-const LIFTOFF := 0.7            # rolling speed needed to pull up off the ground
+const LIFTOFF := 0.75           # rolling speed needed to pull up off the ground
 const PITCH_RATE := 1.25        # rad/s at full stick (gentle, smooth)
 const ROLL_RATE := 2.2
 const GLIDE_SPEED := 0.42       # in the air it never slows below this: it glides
@@ -64,6 +64,12 @@ const ENEMIES := {
 	"tank":      {"hp": 8.0,  "radius": 0.11, "points": 250},
 	"aa":        {"hp": 6.0,  "radius": 0.10, "points": 200},
 	"bomber":    {"hp": 30.0, "radius": 0.30, "points": 2000},
+	"ace":       {"hp": 9.0,  "radius": 0.12, "points": 600},
+	"soldier":   {"hp": 1.0,  "radius": 0.045, "points": 30},
+	"sam":       {"hp": 3.0,  "radius": 0.07, "points": 300},
+	"truck":     {"hp": 5.0,  "radius": 0.09, "points": 150},
+	"radar":     {"hp": 10.0, "radius": 0.11, "points": 400},
+	"fuel":      {"hp": 4.0,  "radius": 0.09, "points": 250},
 }
 const ENEMY_BULLET_DAMAGE := 3.0
 const ENEMY_BULLET_SPEED := 6.0
@@ -73,6 +79,11 @@ const SHELL_GRAVITY := 4.9      # cartoon shells float a little
 const FLAK_DAMAGE := 9.0
 const FLAK_SPEED := 3.6
 const ENGINE_HP := 10.0
+const SAM_PREP := 2.0           # soldiers ready the launcher for 2 s, then fire
+const SAM_SPEED := 2.1
+const SAM_TURN := 1.6
+const SAM_DAMAGE := 15.0
+const MIN_HP_FRACTION := 0.15   # while tuning the flight the plane can't be lost
 const CRASH_DAMAGE := 12.0
 
 ## Five waves; the fifth is the bomber.
@@ -146,7 +157,7 @@ static func rc_fly(st: Dictionary, inp: Dictionary, delta: float, ground_y: floa
 	var pos: Vector3 = st.pos
 	var on_ground: bool = st.ground
 	var event := ""
-	var thrust: float = float(inp.throttle) * THRUST + (BOOST_THRUST if inp.boost else 0.0)
+	var thrust: float = (float(inp.throttle) * THRUST + (BOOST_THRUST if inp.boost else 0.0)) * float(inp.get("power", 1.0))
 	if on_ground:
 		# Taxi: rudder or ailerons steer the wheels; friction and brakes slow it.
 		var turn: float = (float(inp.yaw) + float(inp.roll) * 0.7) * 1.6
@@ -232,6 +243,9 @@ static func autopilot(st: Dictionary, goal: Vector3, throttle: float = 0.9) -> D
 	if flat_f.length() > 0.01 and flat_t.length() > 0.01:
 		heading_err = flat_f.angle_to(flat_t)        # + = target to the right
 	var want_bank := clampf(heading_err * 1.6, -0.75, 0.75)
+	# Target inside the turning circle: fly straight to open the distance first.
+	if absf(heading_err) > 1.2 and flat_t.length() < 1.7:
+		want_bank = 0.0
 	var roll := clampf((want_bank - bank_of(b)) * 3.0, -1.0, 1.0)
 	var climb := atan2(to.y, maxf(0.2, flat_t.length()))
 	var pitch_now := asin(clampf(fwd.y, -1.0, 1.0))

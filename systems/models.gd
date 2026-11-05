@@ -442,6 +442,7 @@ static func crate() -> Dictionary:
 # --- the player's own model ----------------------------------------------------------
 
 const PLAYER_MESH := "res://assets/models/player_plane.res"
+const PILOT_SEAT := Vector3(0.0, 0.028, 0.012)
 const PLAYER_TEX := "res://assets/models/player_plane_albedo.jpg"
 
 
@@ -466,7 +467,12 @@ static func player_plane(outline: float = 0.0018) -> Dictionary:
 	var arm := _arm(root, pal, outline, -0.034, [0.06, 0.085], [0.115, 0.14], 0.0)
 	var nose := pivot(root, "Nose", Vector3(0, 0, -0.16))
 	var exhaust: Array = [pivot(root, "Exhaust", Vector3(0.045, 0.01, -0.09)), pivot(root, "Exhaust", Vector3(-0.045, 0.01, -0.09))]
-	return {"root": root, "prop": p.prop, "blur": p.blur, "gear": [], "rockets": arm.rockets, "bombs": arm.bombs, "muzzles": arm.muzzles, "nose": nose, "exhaust": exhaust, "gear_height": 0.0865, "parked_pitch": 0.0}
+	var pil := pilot()
+	pil.root.position = PILOT_SEAT
+	pil.root.scale = Vector3.ONE * 1.35
+	root.add_child(pil.root)
+	var tips: Array = [pivot(root, "WingTip", Vector3(0.165, -0.02, 0.0)), pivot(root, "WingTip", Vector3(-0.165, -0.02, 0.0))]
+	return {"root": root, "prop": p.prop, "blur": p.blur, "gear": [], "rockets": arm.rockets, "bombs": arm.bombs, "muzzles": arm.muzzles, "nose": nose, "exhaust": exhaust, "gear_height": 0.0865, "parked_pitch": 0.0, "pilot": pil, "tips": tips}
 
 
 ## Guns, rocket rails and bombs under the wings. `y` is the wing underside.
@@ -500,3 +506,175 @@ static func _arm(root: Node3D, pal: Dictionary, outline: float, y: float, gun_x:
 		_live(b, "BombRack")
 		bombs.append(b)
 	return {"muzzles": muzzles, "rockets": rockets, "bombs": bombs}
+
+
+# --- campaign units ---------------------------------------------------------------------
+
+const SKIN := Color(0.95, 0.74, 0.58)
+const LEATHER := Color(0.45, 0.28, 0.16)
+const KHAKI := Color(0.55, 0.52, 0.33)
+const ACE := {"body": Color(0.78, 0.1, 0.12), "trim": Color(0.1, 0.1, 0.1), "ring": YELLOW, "disc": Color(0.1, 0.1, 0.1), "mark": YELLOW, "mark_kind": "diamond", "tip": YELLOW, "nose": Color(0.1, 0.1, 0.1)}
+
+
+## A cartoon pilot sitting in the cockpit: leather helmet, goggles, red scarf.
+## Origin at the seat; the head is ~2 cm above it. Returns {root, head, scarf}.
+static func pilot() -> Dictionary:
+	var root := Node3D.new()
+	root.name = "Pilot"
+	Toon.add(root, Toon.capsule(0.011, 0.03, 10), Toon.mat(LEATHER, 0.4, 0.0012), Vector3(0, 0.0, 0))
+	var head := Node3D.new()
+	head.position = Vector3(0, 0.022, -0.002)
+	root.add_child(head)
+	Toon.add(head, Toon.ball(0.0095, 12, 8), Toon.mat(SKIN, 0.3, 0.0012))
+	var cap := SphereMesh.new()
+	cap.radius = 0.0102
+	cap.height = 0.0102
+	cap.is_hemisphere = true
+	cap.radial_segments = 12
+	cap.rings = 5
+	Toon.add(head, cap, Toon.mat(LEATHER, 0.5, 0.0012), Vector3(0, 0.001, 0.0008))
+	for side: float in [-1.0, 1.0]:
+		Toon.add(head, Toon.torus(0.0034, 0.0011, 10), Toon.mat(Color(0.3, 0.3, 0.32), 0.7, 0.0), Vector3(0.0042 * side, 0.0045, -0.0082), Vector3(80, 0, 0))
+		Toon.add(head, Toon.ball(0.0026, 8, 4), Toon.mat(GLASS, 0.9, 0.0), Vector3(0.0042 * side, 0.0045, -0.0086))
+		Toon.add(head, Toon.ball(0.003, 8, 4), Toon.mat(LEATHER, 0.4, 0.0), Vector3(0.0095 * side, -0.001, 0.0))
+	Toon.add(head, Toon.ball(0.0018, 6, 3), Toon.mat(Color(0.9, 0.55, 0.45), 0.3, 0.0), Vector3(0, -0.0012, -0.0094))
+	var scarf := Node3D.new()
+	scarf.position = Vector3(0, 0.011, 0.006)
+	root.add_child(scarf)
+	_live(scarf, "Scarf")
+	Toon.add(scarf, Toon.capsule(0.0035, 0.024, 8), Toon.mat(Color(0.9, 0.12, 0.1), 0.3, 0.001), Vector3(0, 0, 0.011), Vector3(80, 0, 0), Vector3(1.6, 1, 0.5))
+	return {"root": root, "head": head, "scarf": scarf}
+
+
+## A little cartoon soldier, ~6 cm tall. kind: "rifle" or "crew".
+## Returns {root, legs: Array, arms: Node3D}.
+static func soldier(kind: String = "rifle") -> Dictionary:
+	var root := Node3D.new()
+	root.name = "Soldier"
+	var o := 0.0012
+	var cloth := Toon.mat(KHAKI if kind == "rifle" else Color(0.42, 0.48, 0.3), 0.3, o)
+	var legs: Array = []
+	for side: float in [-1.0, 1.0]:
+		var hip := pivot(root, "Leg", Vector3(0.006 * side, 0.024, 0))
+		Toon.add(hip, Toon.capsule(0.0045, 0.022, 8), cloth, Vector3(0, -0.011, 0))
+		Toon.add(hip, Toon.capsule(0.0045, 0.01, 8), Toon.mat(Color(0.2, 0.15, 0.1), 0.3, o), Vector3(0, -0.021, -0.003), Vector3(90, 0, 0))
+		legs.append(hip)
+	Toon.add(root, Toon.capsule(0.01, 0.026, 10), cloth, Vector3(0, 0.035, 0), Vector3.ZERO, Vector3(1.1, 1, 0.85))
+	Toon.add(root, Toon.ball(0.0085, 12, 8), Toon.mat(SKIN, 0.3, o), Vector3(0, 0.054, 0))
+	var helm := SphereMesh.new()
+	helm.radius = 0.0105
+	helm.height = 0.0105
+	helm.is_hemisphere = true
+	helm.radial_segments = 12
+	helm.rings = 5
+	Toon.add(root, helm, Toon.mat(Color(0.3, 0.36, 0.22), 0.4, o), Vector3(0, 0.056, 0))
+	Toon.add(root, Toon.can(0.013, 0.013, 0.0015, 14), Toon.mat(Color(0.3, 0.36, 0.22), 0.4, o), Vector3(0, 0.0565, 0))
+	var arms := pivot(root, "Arms", Vector3(0, 0.042, 0))
+	for side: float in [-1.0, 1.0]:
+		Toon.add(arms, Toon.capsule(0.0038, 0.02, 8), cloth, Vector3(0.012 * side, -0.006, -0.006), Vector3(-60, 0, 0))
+	if kind == "rifle":
+		Toon.add(arms, Toon.block(Vector3(0.003, 0.004, 0.036)), Toon.mat(Color(0.3, 0.2, 0.12), 0.3, o), Vector3(0.004, -0.008, -0.016), Vector3(-15, 0, 0))
+	return {"root": root, "legs": legs, "arms": arms}
+
+
+## Anti-aircraft rocket launcher on a tripod (tube pitches up). Returns
+## {root, mount, tube, muzzle, lamp}. Built folded; the team raises it.
+static func launcher() -> Dictionary:
+	var root := Node3D.new()
+	root.name = "Launcher"
+	var o := 0.0014
+	var green := Toon.mat(Color(0.36, 0.42, 0.28), 0.4, o)
+	var dark := Toon.mat(DARK, 0.4, o)
+	for i in range(3):
+		var a := TAU * i / 3.0
+		Toon.add(root, Toon.can(0.002, 0.002, 0.05, 6), dark, Vector3(cos(a) * 0.012, 0.02, sin(a) * 0.012), Vector3(rad_to_deg(sin(a)) * 25.0, 0, -rad_to_deg(cos(a)) * 25.0))
+	var mount := pivot(root, "Mount", Vector3(0, 0.042, 0))
+	var tube := Node3D.new()
+	mount.add_child(tube)
+	Toon.add(tube, Toon.can(0.008, 0.008, 0.07, 12), green, Vector3(0, 0, -0.01), Vector3(90, 0, 0))
+	Toon.add(tube, Toon.can(0.0095, 0.0095, 0.008, 12), dark, Vector3(0, 0, -0.044), Vector3(90, 0, 0))
+	Toon.add(tube, Toon.block(Vector3(0.006, 0.01, 0.02)), dark, Vector3(0.011, 0, 0.0))
+	var muzzle := Node3D.new()
+	muzzle.position = Vector3(0, 0, -0.05)
+	tube.add_child(muzzle)
+	var lamp := Toon.add(mount, Toon.ball(0.0045, 8, 4), Toon.unique(Toon.mat(Color(0.4, 0.05, 0.05), 0.4, 0.0)), Vector3(0, 0.014, 0.012))
+	return {"root": root, "mount": mount, "tube": tube, "muzzle": muzzle, "lamp": lamp}
+
+
+## Cartoon army truck with a canvas back (~16 cm). Returns {root, wheels}.
+static func truck() -> Dictionary:
+	var root := Node3D.new()
+	root.name = "Truck"
+	var o := 0.0016
+	var body := Toon.mat(OLIVE, 0.4, o)
+	Toon.add(root, Toon.block(Vector3(0.07, 0.012, 0.16)), Toon.mat(DARK, 0.3, o), Vector3(0, 0.022, 0))
+	Toon.add(root, Toon.block(Vector3(0.068, 0.045, 0.045)), body, Vector3(0, 0.05, -0.055))
+	Toon.add(root, Toon.block(Vector3(0.06, 0.02, 0.003)), Toon.mat(GLASS, 0.9, 0.0), Vector3(0, 0.062, -0.078))
+	Toon.add(root, Toon.block(Vector3(0.07, 0.025, 0.03)), body, Vector3(0, 0.038, -0.09))
+	var canvas := Toon.mat(Color(0.62, 0.6, 0.42), 0.2, o)
+	Toon.add(root, Toon.block(Vector3(0.066, 0.034, 0.1)), canvas, Vector3(0, 0.045, 0.03))
+	Toon.add(root, Toon.can(0.033, 0.033, 0.1, 16), canvas, Vector3(0, 0.062, 0.03), Vector3(90, 0, 0), Vector3(1, 1, 0.55))
+	insignia(root, ENEMY, 0.016, Vector3(0.0355, 0.05, -0.055), Vector3(0, 0, -90))
+	var wheels: Array = []
+	for z in [-0.075, 0.02, 0.055]:
+		for side: float in [-1.0, 1.0]:
+			var wnode := pivot(root, "Wheel", Vector3(0.036 * side, 0.015, z))
+			Toon.add(wnode, Toon.can(0.015, 0.015, 0.012, 14), Toon.mat(TIRE, 0.3, o), Vector3.ZERO, Vector3(0, 0, 90))
+			wheels.append(wnode)
+	Toon.bake(root)
+	return {"root": root, "wheels": wheels}
+
+
+## Radar tower with a spinning dish (~35 cm). Returns {root, dish}.
+static func radar() -> Dictionary:
+	var root := Node3D.new()
+	root.name = "Radar"
+	var o := 0.0018
+	var metal := Toon.mat(Color(0.5, 0.52, 0.5), 0.5, o)
+	for i in range(4):
+		var a := TAU * (i + 0.5) / 4.0
+		Toon.add(root, Toon.can(0.003, 0.004, 0.3, 6), metal, Vector3(cos(a) * 0.03, 0.15, sin(a) * 0.03), Vector3(rad_to_deg(sin(a)) * -5.0, 0, rad_to_deg(cos(a)) * 5.0))
+	for h in [0.08, 0.18]:
+		Toon.add(root, Toon.torus(0.028, 0.002, 4), metal, Vector3(0, h, 0), Vector3(0, 45, 0))
+	Toon.add(root, Toon.block(Vector3(0.07, 0.04, 0.07)), Toon.mat(OLIVE, 0.4, o), Vector3(0, 0.02, 0))
+	var dish := pivot(root, "Dish", Vector3(0, 0.31, 0))
+	var bowl := SphereMesh.new()
+	bowl.radius = 0.055
+	bowl.height = 0.03
+	bowl.is_hemisphere = true
+	bowl.radial_segments = 16
+	bowl.rings = 4
+	Toon.add(dish, bowl, Toon.mat(Color(0.85, 0.85, 0.82), 0.6, o), Vector3(0, 0.02, -0.01), Vector3(-70, 0, 0))
+	Toon.add(dish, Toon.can(0.004, 0.004, 0.05, 6), metal, Vector3(0, 0.03, -0.03), Vector3(-70, 0, 0))
+	Toon.add(dish, Toon.ball(0.007, 8, 4), Toon.mat(Color(1.0, 0.2, 0.1), 0.4, 0.0), Vector3(0, 0.055, -0.05))
+	Toon.bake(root)
+	return {"root": root, "dish": dish}
+
+
+## Striped fuel tank on legs (~14 cm). Returns {root}.
+static func fuel_tank() -> Dictionary:
+	var root := Node3D.new()
+	root.name = "FuelTank"
+	var o := 0.0018
+	Toon.add(root, Toon.capsule(0.045, 0.16, 16), Toon.mat(Color(0.88, 0.86, 0.8), 0.6, o), Vector3(0, 0.07, 0), Vector3(0, 0, 90))
+	for x in [-0.04, 0.0, 0.04]:
+		Toon.add(root, Toon.torus(0.0455, 0.004, 18), Toon.mat(RED, 0.5, 0.0), Vector3(x, 0.07, 0), Vector3(0, 0, 90))
+	for x in [-0.05, 0.05]:
+		Toon.add(root, Toon.block(Vector3(0.008, 0.035, 0.07)), Toon.mat(DARK, 0.3, o), Vector3(x, 0.017, 0))
+	Toon.add(root, Toon.can(0.008, 0.008, 0.012, 10), Toon.mat(DARK, 0.3, o), Vector3(0, 0.118, 0))
+	Toon.bake(root)
+	return {"root": root}
+
+
+## A flight ring to fly through (inner radius ~19 cm), striped. Faces +Z.
+## Returns {root, spin, mat}.
+static func ring() -> Dictionary:
+	var root := Node3D.new()
+	root.name = "Ring"
+	var spin := pivot(root, "Spin")
+	var m := Toon.unique(Toon.mat(Color(1.0, 0.8, 0.15), 0.6, 0.002))
+	Toon.add(spin, Toon.torus(0.27, 0.016, 36), m, Vector3.ZERO, Vector3(90, 0, 0))
+	for i in range(8):
+		var a := TAU * i / 8.0
+		Toon.add(spin, Toon.ball(0.018, 8, 4), Toon.mat(RED, 0.5, 0.0015), Vector3(cos(a) * 0.27, sin(a) * 0.27, 0))
+	return {"root": root, "spin": spin, "mat": m}

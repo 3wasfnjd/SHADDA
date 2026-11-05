@@ -25,7 +25,19 @@ var boost: float = 1.0
 var boosting: bool = false
 var throttle: float = 0.0
 var stalling: bool = false
-var invincible: bool = false       # free flight: nothing can hurt the plane
+var invincible: bool = false       # can't be lost: damage stops at 15 % (stars still count it)
+# Upgrades picked between campaign stages.
+var power: float = 1.0
+var gun_rate: float = 1.0
+var gun_damage: float = 1.0
+var rocket_max: int = WarMath.ROCKETS
+var lock_mult: float = 1.0
+var armor: float = 1.0
+var cluster: bool = false
+var upgrades: Array = []
+var damage_taken: float = 0.0
+var _trails: Array = []
+var _dust_t: float = 0.0
 var _sm := {"pitch": 0.0, "roll": 0.0, "yaw": 0.0}
 var locks: Array = []
 var hit_flash: float = 0.0
@@ -63,6 +75,22 @@ func _ready() -> void:
 	# Gun sight: a small ring 0.9 m ahead of the nose.
 	_sight = Toon.add(self, Toon.torus(0.02, 0.0016, 24), Toon.flat(Color(1.0, 0.95, 0.5, 0.9)))
 	_sight.top_level = true
+	# Wingtip vapour trails (show in fast or tight flying).
+	for tip in model.get("tips", []):
+		var mesh := ImmediateMesh.new()
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		var tm := StandardMaterial3D.new()
+		tm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		tm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		tm.vertex_color_use_as_albedo = true
+		tm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mi.material_override = tm
+		mi.top_level = true
+		mi.extra_cull_margin = 10.0
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		_trails.append({"tip": tip, "mesh": mesh, "pts": []})
 	_engine = AudioStreamPlayer3D.new()
 	var stream = load("res://assets/audio/engine.wav")
 	if stream is AudioStreamWAV:
@@ -84,7 +112,7 @@ func park(at: Vector3, heading: Vector3, surface_y: float) -> void:
 	h = h.normalized() if h.length() > 0.01 else Vector3.FORWARD
 	state = State.PARKED
 	hp = WarMath.PLANE_HP
-	rockets = WarMath.ROCKETS
+	rockets = rocket_max
 	bombs = WarMath.BOMBS
 	boost = 1.0
 	throttle = 0.0
@@ -176,7 +204,7 @@ func _fly(delta: float, inp: Dictionary) -> void:
 		var raw := clampf(float(inp.get(k, 0.0)), -1.0, 1.0)
 		var curved := raw * (0.35 + 0.65 * absf(raw))
 		_sm[k] = move_toward(_sm[k], curved, delta * 5.0)
-	var step := {"pitch": _sm.pitch, "roll": _sm.roll, "yaw": _sm.yaw, "throttle": throttle, "boost": boosting, "brake": inp.get("brake", false)}
+	var step := {"pitch": _sm.pitch, "roll": _sm.roll, "yaw": _sm.yaw, "throttle": throttle, "boost": boosting, "brake": inp.get("brake", false), "power": power}
 	if _roll_t >= 0.0:
 		step.roll = 0.0
 	var was_ground: bool = flight.ground
@@ -306,6 +334,13 @@ func _animate(delta: float) -> void:
 			if to_cam.length() > 0.05:
 				_sight.look_at(at - to_cam, Vector3.UP if absf(to_cam.normalized().y) < 0.98 else Vector3.RIGHT)
 				_sight.rotate_object_local(Vector3.RIGHT, PI * 0.5)
+	_update_trails(delta)
+	# Prop wash kicks up dust on the take-off roll.
+	if on_ground() and float(flight.speed) > 0.3 and battle:
+		_dust_t -= delta
+		if _dust_t <= 0.0:
+			_dust_t = 0.08
+			Fx.smoke(battle, global_position - forward() * 0.1 - Vector3(0, gear_height * 0.8, 0), 0.012)
 	if _engine.playing:
 		_engine.pitch_scale = clampf(0.5 + _rpm * 0.45 + float(flight.speed) * 0.25, 0.4, 2.0)
 		_engine.volume_db = -16.0 + _rpm * 4.0 + (2.0 if boosting else 0.0)
@@ -323,7 +358,7 @@ func _weapons(delta: float, trigger: float, grip: float) -> void:
 	_reload(delta)
 	_gun_cd -= delta
 	if trigger > 0.55 and _gun_cd <= 0.0 and battle:
-		_gun_cd = 1.0 / WarMath.GUN_RATE
+		_gun_cd = 1.0 / (WarMath.GUN_RATE * gun_rate)
 		_fire_guns()
 	if grip > 0.55:
 		_grip_held = true
@@ -332,7 +367,7 @@ func _weapons(delta: float, trigger: float, grip: float) -> void:
 			var e = _best_lock()
 			if e:
 				locks.append(e)
-				_lock_timer = WarMath.LOCK_TIME
+				_lock_timer = WarMath.LOCK_TIME * lock_mult
 				_haptic(0.3, 0.04)
 				battle.cue("lock", global_position, -4.0 + locks.size() * 1.5)
 	elif grip < 0.3 and _grip_held:
@@ -348,7 +383,7 @@ func _weapons(delta: float, trigger: float, grip: float) -> void:
 
 
 func _reload(delta: float) -> void:
-	if rockets < WarMath.ROCKETS:
+	if rockets < rocket_max:
 		_rocket_reload -= delta
 		if _rocket_reload <= 0.0:
 			rockets += 1
@@ -451,11 +486,13 @@ func rolling() -> bool:
 
 
 func take_hit(amount: float, crash: bool = false) -> void:
-	if not alive() or invincible:
+	if not alive():
 		return
 	if rolling() and not crash:
 		amount *= 0.2
-	hp = maxf(0.0, hp - amount)
+	amount *= armor
+	damage_taken += amount
+	hp = maxf(WarMath.PLANE_HP * WarMath.MIN_HP_FRACTION if invincible else 0.0, hp - amount)
 	hit_flash = 1.0
 	_haptic(0.8 if amount > 5.0 else 0.4, 0.12)
 	if hp <= 0.0:
@@ -467,6 +504,39 @@ func take_hit(amount: float, crash: bool = false) -> void:
 		_salvo.clear()
 		if battle:
 			battle.cue("engine_die", global_position)
+
+
+func reset_upgrades() -> void:
+	power = 1.0
+	gun_rate = 1.0
+	gun_damage = 1.0
+	rocket_max = WarMath.ROCKETS
+	lock_mult = 1.0
+	armor = 1.0
+	cluster = false
+	upgrades.clear()
+	damage_taken = 0.0
+
+
+## kind: engine, guns, rockets, armor, cluster.
+func apply_upgrade(kind: String) -> void:
+	upgrades.append(kind)
+	match kind:
+		"engine":
+			power += 0.22
+		"guns":
+			gun_rate *= 1.4
+			gun_damage *= 1.5
+		"rockets":
+			rocket_max += 2
+			rockets = rocket_max
+			lock_mult *= 0.55
+		"armor":
+			armor *= 0.6
+			hp = WarMath.PLANE_HP
+		"cluster":
+			cluster = true
+	refresh_stores()
 
 
 func repair(amount: float) -> void:
@@ -485,3 +555,34 @@ func refresh_stores() -> void:
 func _haptic(amplitude: float, duration: float) -> void:
 	if hand and hand.get_is_active():
 		hand.trigger_haptic_pulse("haptic", 0.0, amplitude, duration, 0.0)
+
+
+
+func _update_trails(_delta: float) -> void:
+	var bank := absf(WarMath.bank_of(flight.basis)) if state == State.FLYING else 0.0
+	var on := airborne() and (float(flight.speed) > 1.35 or bank > 0.55 or boosting)
+	var up := global_basis.y
+	for t in _trails:
+		var pts: Array = t.pts
+		if on:
+			pts.append((t.tip as Node3D).global_position)
+			if pts.size() > 26:
+				pts.pop_front()
+		elif not pts.is_empty():
+			pts.pop_front()
+			if not pts.is_empty():
+				pts.pop_front()
+		var mesh: ImmediateMesh = t.mesh
+		mesh.clear_surfaces()
+		if pts.size() < 2:
+			continue
+		mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+		for i in range(pts.size()):
+			var a := float(i) / float(pts.size() - 1)
+			var w := 0.0035 * a
+			var c := Color(1, 1, 1, 0.55 * a)
+			mesh.surface_set_color(c)
+			mesh.surface_add_vertex(pts[i] + up * w)
+			mesh.surface_set_color(c)
+			mesh.surface_add_vertex(pts[i] - up * w)
+		mesh.surface_end()

@@ -21,7 +21,7 @@ var _trail_timer: float = 0.0
 static func make(shot_kind: String, from: Vector3, dir: Vector3, inherit: Vector3 = Vector3.ZERO) -> Shot:
 	var s := Shot.new()
 	s.kind = shot_kind
-	s.hostile = shot_kind in ["ebullet", "shell", "flak", "ebomb"]
+	s.hostile = shot_kind in ["ebullet", "shell", "flak", "ebomb", "sam"]
 	var d := dir.normalized()
 	match shot_kind:
 		"bullet":
@@ -46,6 +46,10 @@ static func make(shot_kind: String, from: Vector3, dir: Vector3, inherit: Vector
 			s.max_life = 2.5
 			s.damage = WarMath.SHELL_DAMAGE
 			s.gravity = WarMath.SHELL_GRAVITY
+		"sam":
+			s.velocity = d * 1.2
+			s.max_life = 5.0
+			s.damage = WarMath.SAM_DAMAGE
 		"flak":
 			s.velocity = d * WarMath.FLAK_SPEED
 			s.max_life = 1.4
@@ -73,21 +77,28 @@ func _ready() -> void:
 			Toon.add(self, Toon.capsule(0.006, 0.02, 8), Toon.mat(Color(0.25, 0.25, 0.25), 0.6, 0.001), Vector3.ZERO, Vector3(90, 0, 0))
 		"flak":
 			Toon.add(self, Toon.ball(0.006, 8, 4), Toon.flat(Color(1.0, 0.5, 0.15, 1.0)))
+		"sam":
+			var r := Models.rocket(true)
+			r.scale = Vector3.ONE * 1.5
+			add_child(r)
+			Toon.add(self, Toon.ball(0.008, 8, 4), Toon.flat(Color(1.0, 0.45, 0.15, 1.0)), Vector3(0, 0, 0.045), Vector3.ZERO, Vector3(1, 1, 2.5))
 
 
 func step(delta: float, world: Node3D) -> void:
 	prev = global_position
 	life += delta
-	if kind == "rocket":
-		var speed := minf(WarMath.ROCKET_SPEED, velocity.length() + 9.0 * delta)
+	if kind == "rocket" or kind == "sam":
+		var top := WarMath.ROCKET_SPEED if kind == "rocket" else WarMath.SAM_SPEED
+		var turn := WarMath.ROCKET_TURN if kind == "rocket" else WarMath.SAM_TURN
+		var speed := minf(top, velocity.length() + (9.0 if kind == "rocket" else 3.0) * delta)
 		var heading := velocity.normalized()
-		if is_instance_valid(target) and life > 0.1 and target.has_method("hit_center"):
-			heading = WarMath.steer(heading, target.hit_center() - global_position, WarMath.ROCKET_TURN, delta)
+		if is_instance_valid(target) and life > (0.1 if kind == "rocket" else 0.35) and target.has_method("hit_center"):
+			heading = WarMath.steer(heading, target.hit_center() - global_position, turn, delta)
 		velocity = heading * speed
 		_trail_timer -= delta
 		if _trail_timer <= 0.0:
 			_trail_timer = 0.035
-			Fx.smoke(world, global_position - velocity.normalized() * 0.03, 0.009)
+			Fx.smoke(world, global_position - velocity.normalized() * 0.03, 0.009 if kind == "rocket" else 0.013)
 	if gravity > 0.0:
 		velocity += Vector3(0, -gravity, 0) * delta
 	global_position += velocity * delta
@@ -96,3 +107,8 @@ func step(delta: float, world: Node3D) -> void:
 		look_at(global_position + velocity, up)
 	if life >= max_life:
 		dead = true
+
+
+## Enemy anti-air missiles can be shot down by the player's guns.
+func can_be_shot() -> bool:
+	return kind == "sam"

@@ -17,6 +17,7 @@ var _bombs: Array = []
 var _roll_dot: MeshInstance3D
 var _throttle_fill: MeshInstance3D
 var _stall: MeshInstance3D
+var _objective: Label3D
 var _shown: float = 0.0
 var _target: int = 0
 var _bump: float = 0.0
@@ -63,6 +64,13 @@ func _ready() -> void:
 	Toon.add(self, Toon.block(Vector3(0.008, 0.07, 0.002)), Toon.mat(Color(0.2, 0.2, 0.22), 0.2, 0.0006), Vector3(0.076, 0.004, 0.001))
 	_throttle_fill = Toon.add(self, Toon.block(Vector3(0.006, 0.068, 0.002)), Toon.mat(Color(1.0, 0.6, 0.15), 0.4, 0.0), Vector3(0.076, 0.004, 0.002))
 	_stall = Toon.add(self, Toon.ball(0.006, 10, 5), Toon.unique(Toon.mat(Color(0.3, 0.1, 0.1), 0.4, 0.0006)), Vector3(0.076, 0.048, 0.003))
+	# Mission line above the board.
+	_objective = UI.number("", 40, Color(1, 1, 1), false)
+	_objective.pixel_size = 0.00042
+	_objective.position = Vector3(0, 0.068, 0.002)
+	_objective.width = 700
+	_objective.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(_objective)
 	# Off-screen arrow (world space, in front of the eyes).
 	_arrow = UI.icon("play", Color(1.0, 0.82, 0.15), 0.05, 0.008)
 	_arrow.top_level = true
@@ -77,6 +85,11 @@ func set_score(v: int) -> void:
 	_target = v
 	if v == 0:
 		_shown = 0.0
+
+
+func set_objective(text: String) -> void:
+	if _objective.text != text:
+		_objective.text = text
 
 
 func set_combo(m: float) -> void:
