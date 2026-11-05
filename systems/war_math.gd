@@ -4,7 +4,22 @@ extends RefCounted
 ## geometry (walls with openings), waves and scoring. No nodes.
 
 # --- player plane -------------------------------------------------------------
-const PLANE_RADIUS := 0.12
+const PLANE_RADIUS := 0.09
+const PLANE_SCALE := 0.7        # the player's plane: 24 cm span
+
+# --- manual (RC-style) flight: the player controls everything ------------------
+const THRUST := 2.0             # m/s² at full throttle
+const BOOST_THRUST := 1.4
+const DRAG := 1.25              # top speed ≈ sqrt(THRUST/DRAG) ≈ 1.26 m/s
+const STALL := 0.5              # below this the wings stop lifting
+const LIFTOFF := 0.7            # rolling speed needed to pull up off the ground
+const PITCH_RATE := 1.7         # rad/s at full stick
+const ROLL_RATE := 3.0
+const YAW_RATE := 0.9
+const BANK_TURN := 2.2          # turn rate per unit sin(bank)
+const SAFE_SINK := 0.8          # touchdown faster than this (m/s down) is a crash
+const GROUND_FRICTION := 0.5
+const BRAKE := 1.6
 const PLANE_HP := 100.0
 const CRUISE := 1.35            # m/s — a toy plane crossing a room
 const BOOST := 2.2
@@ -113,6 +128,114 @@ static func fly(state: Dictionary, goal: Vector3, wanted_speed: float, delta: fl
 				new_fwd[axis] = -new_fwd[axis] * 0.3
 	new_fwd = new_fwd.normalized()
 	return {"pos": np, "fwd": new_fwd, "speed": speed, "bank": bank}
+
+
+## One step of the player's hand-flown plane. Nothing is automatic except
+## a gentle wing-leveller when the roll stick is centred.
+## st: {pos, basis, speed, sink, ground: bool}
+## inp: {pitch, roll, yaw (-1..1; pitch + = nose up, roll/yaw + = right),
+##       throttle 0..1, boost: bool, brake: bool}
+## ground_y: surface under the plane; gear: wheel height.
+## Returns st with an extra "event": "", "landed", "liftoff" or "crash".
+static func rc_fly(st: Dictionary, inp: Dictionary, delta: float, ground_y: float, gear: float) -> Dictionary:
+	var b: Basis = st.basis
+	var speed: float = st.speed
+	var sink: float = st.sink
+	var pos: Vector3 = st.pos
+	var on_ground: bool = st.ground
+	var event := ""
+	var thrust: float = float(inp.throttle) * THRUST + (BOOST_THRUST if inp.boost else 0.0)
+	if on_ground:
+		# Taxi: rudder or ailerons steer the wheels; friction and brakes slow it.
+		var turn: float = (float(inp.yaw) + float(inp.roll) * 0.7) * 1.6
+		b = Basis(Vector3.UP, -turn * delta) * b
+		var fwd := -b.z
+		fwd.y = 0.0
+		fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
+		b = Basis.looking_at(fwd, Vector3.UP)
+		var resist := DRAG * speed * speed + (GROUND_FRICTION + (BRAKE if inp.brake else 0.0)) * (1.0 if speed > 0.0 else 0.0)
+		speed = maxf(0.0, speed + (thrust - resist) * delta)
+		pos += fwd * speed * delta
+		pos.y = ground_y + gear
+		sink = 0.0
+		if speed >= LIFTOFF and float(inp.pitch) > 0.2:
+			on_ground = false
+			event = "liftoff"
+			b = b * Basis(Vector3.RIGHT, 0.12)
+			pos.y += 0.01
+	else:
+		b = b * Basis(Vector3.RIGHT, float(inp.pitch) * PITCH_RATE * delta)
+		b = b * Basis(Vector3.FORWARD, float(inp.roll) * ROLL_RATE * delta)
+		b = b * Basis(Vector3.UP, -float(inp.yaw) * YAW_RATE * delta)
+		var bank := bank_of(b)
+		if absf(float(inp.roll)) < 0.1:
+			b = b * Basis(Vector3.FORWARD, -clampf(bank, -1.2 * delta, 1.2 * delta))
+		# Banked wings turn the plane (coordinated turn).
+		var lift_k := clampf(speed / STALL, 0.0, 1.0)
+		b = Basis(Vector3.UP, -sin(bank_of(b)) * BANK_TURN * lift_k * delta) * b
+		b = b.orthonormalized()
+		var fwd2 := -b.z
+		speed += (thrust - DRAG * speed * speed - GRAVITY * fwd2.y * 0.35) * delta
+		speed = maxf(0.0, speed)
+		if speed < STALL:
+			# Stall: the plane sinks and the nose drops.
+			var deficit := 1.0 - speed / STALL
+			sink += GRAVITY * 0.45 * deficit * delta
+			var level := Basis.looking_at(Vector3(fwd2.x, -0.9, fwd2.z).normalized(), Vector3.UP)
+			b = b.slerp(level, minf(1.0, deficit * 0.9 * delta)).orthonormalized()
+		else:
+			sink = move_toward(sink, 0.0, 3.0 * delta)
+		pos += fwd2 * speed * delta + Vector3(0, -sink, 0) * delta
+		if pos.y <= ground_y + gear:
+			var descent := sink - fwd2.y * speed
+			if descent > SAFE_SINK or absf(bank_of(b)) > 0.6 or fwd2.y < -0.4:
+				event = "crash"
+				pos.y = ground_y + gear + 0.02
+				sink = 0.0
+				speed *= 0.4
+				b = Basis.looking_at(Vector3(fwd2.x, 0.25, fwd2.z).normalized(), Vector3.UP)
+			else:
+				event = "landed"
+				on_ground = true
+				pos.y = ground_y + gear
+				sink = 0.0
+				var flat := Vector3(fwd2.x, 0, fwd2.z)
+				b = Basis.looking_at(flat.normalized() if flat.length() > 0.01 else Vector3.FORWARD, Vector3.UP)
+	return {"pos": pos, "basis": b, "speed": speed, "sink": sink, "ground": on_ground, "event": event}
+
+
+## Bank angle (radians, + = right wing down).
+static func bank_of(b: Basis) -> float:
+	var right := b.x
+	var fwd := -b.z
+	var level_right := fwd.cross(Vector3.UP)
+	if level_right.length() < 0.05:
+		return 0.0
+	level_right = level_right.normalized()
+	var up := level_right.cross(fwd).normalized()
+	return atan2(-right.dot(up), right.dot(level_right))
+
+
+## Stick inputs that fly the RC model toward `goal` (used by the tests and the
+## desktop preview only — in the game the player flies).
+static func autopilot(st: Dictionary, goal: Vector3, throttle: float = 0.9) -> Dictionary:
+	var b: Basis = st.basis
+	var fwd := -b.z
+	var to: Vector3 = goal - (st.pos as Vector3)
+	var flat_f := Vector2(fwd.x, fwd.z)
+	var flat_t := Vector2(to.x, to.z)
+	var heading_err := 0.0
+	if flat_f.length() > 0.01 and flat_t.length() > 0.01:
+		heading_err = flat_f.angle_to(flat_t)        # + = target to the right
+	var want_bank := clampf(heading_err * 1.6, -0.75, 0.75)
+	var roll := clampf((want_bank - bank_of(b)) * 3.0, -1.0, 1.0)
+	var climb := atan2(to.y, maxf(0.2, flat_t.length()))
+	var pitch_now := asin(clampf(fwd.y, -1.0, 1.0))
+	var pitch := clampf((clampf(climb, -0.45, 0.45) - pitch_now) * 3.0, -1.0, 1.0)
+	if st.ground:
+		pitch = 1.0 if st.speed >= LIFTOFF else 0.0
+		roll = clampf(heading_err * 2.0, -1.0, 1.0)
+	return {"pitch": pitch, "roll": roll, "yaw": 0.0, "throttle": throttle, "boost": false, "brake": false}
 
 
 ## Push-away vector from the box faces the plane is heading into.

@@ -1,17 +1,15 @@
 extends Node3D
-## Boot: OpenXR + passthrough, studio card, room scan, then the room war.
-## Right controller: point to steer the plane, trigger guns, grip rockets,
-## A bomb, B barrel roll. Left controller: trigger boost; wrist board.
+## Boot: OpenXR + passthrough, a fresh room scan, then the war. The studio
+## logo appears exactly once: as the Meta system splash while the app loads
+## (assets/ui/studio.png → vr_splash.png). There is no second in-game logo.
+## The plane is flown entirely by hand (see PlayerPlane for the sticks);
+## the right controller also points at the menu buttons.
 ## Desktop "--preview" fakes a headset in a grey room so CI can render
 ## screenshots (which prove nothing about the Quest itself).
 
-const IntroClock = preload("res://systems/intro_clock.gd")
-
-var clock = IntroClock.new()
 var xr: OpenXRInterface
 var origin: XROrigin3D
 var head: XRCamera3D
-var studio: Sprite3D
 var controllers: Array[XRController3D] = []
 var aims: Array[XRController3D] = []
 var plane: PlayerPlane
@@ -55,11 +53,6 @@ func _ready() -> void:
 	sun.light_energy = 1.15
 	sun.light_color = Color(1.0, 0.97, 0.9)
 	add_child(sun)
-	studio = Sprite3D.new()
-	studio.texture = load("res://assets/ui/studio.png")
-	studio.pixel_size = 0.00085
-	studio.modulate.a = 0.0
-	add_child(studio)
 	for i in range(2):
 		var c := XRController3D.new()
 		c.tracker = &"left_hand" if i == 0 else &"right_hand"
@@ -100,7 +93,6 @@ func _ready() -> void:
 			_stop("Passthrough غير متاح. اللعبة تتطلب رؤية الغرفة.")
 			return
 		xr.environment_blend_mode = XRInterface.XR_ENV_BLEND_MODE_ALPHA_BLEND
-		xr.pose_recentered.connect(_recenter)
 		if xr.get_available_display_refresh_rates().has(72.0):
 			xr.display_refresh_rate = 72.0
 	RenderingServer.frame_post_draw.connect(func(): rendered = true)
@@ -134,15 +126,10 @@ func _process(delta: float) -> void:
 		return
 	var ready := foreground and _tracking_ready()
 	if ready and not positioned:
-		_recenter()
 		positioned = true
 		rendered = false
 		return
-	if preview and not clock.finished:
-		clock.tick(10.0, true)
-	studio.modulate.a = clock.tick(delta, ready and positioned and rendered)
-	studio.visible = not clock.finished and ready
-	if clock.finished and not started:
+	if positioned and (rendered or preview) and not started:
 		started = true
 		battle.build(head, plane, hud)
 		battle.hands = controllers
@@ -158,18 +145,31 @@ func _process(delta: float) -> void:
 		return
 	var tr := 0.0
 	var gr := 0.0
-	var tl := 0.0
+	var inp := {}
 	if preview:
 		var input := _preview_input(delta)
 		tr = input[0]
 		gr = input[1]
-		tl = input[2]
+		inp = input[2]
 	else:
 		tr = controllers[1].get_float("trigger")
 		gr = controllers[1].get_float("grip")
-		tl = controllers[0].get_float("trigger")
+		var ls := controllers[0].get_vector2("thumbstick")
+		var rs := controllers[1].get_vector2("thumbstick")
+		inp = {
+			"throttle_delta": _dead(ls.y),
+			"yaw": _dead(ls.x),
+			"pitch": -_dead(rs.y),          # pull back = nose up
+			"roll": _dead(rs.x),
+			"boost": controllers[0].get_float("trigger") > 0.5,
+			"brake": controllers[0].get_float("grip") > 0.5,
+		}
 	var aim := aims[1].global_transform
-	battle.update_controls(delta, aim.origin, -aim.basis.z, tr, gr, tl)
+	battle.update_controls(delta, aim.origin, -aim.basis.z, inp, tr, gr)
+
+
+static func _dead(v: float) -> float:
+	return 0.0 if absf(v) < 0.12 else signf(v) * (absf(v) - 0.12) / 0.88
 
 
 func _button(action: StringName, hand_index: int) -> void:
@@ -177,13 +177,6 @@ func _button(action: StringName, hand_index: int) -> void:
 		return
 	battle.on_button(action, hand_index)
 
-
-func _recenter() -> void:
-	var f := -head.global_basis.z
-	f.y = 0
-	f = f.normalized() if f.length() > 0.01 else Vector3.FORWARD
-	studio.global_position = head.global_position + f * 1.6
-	studio.look_at(head.global_position, Vector3.UP, true)
 
 
 func _stop(message: String) -> void:
@@ -258,7 +251,7 @@ func _preview_room_visuals() -> void:
 ## Scripted flights for the screenshots. Returns [trigger_r, grip_r, trigger_l].
 func _preview_input(delta: float) -> Array:
 	preview_t += delta
-	var out := [0.0, 0.0, 0.0]
+	var out: Array = [0.0, 0.0, {}]
 	var aim := aims[1]
 	var point := Vector3(0, 1.2, -1.0)
 	match battle.phase:
@@ -302,6 +295,11 @@ func _preview_input(delta: float) -> Array:
 			if preview_t > 12.5:
 				battle._finish(true)
 	aim.global_transform = Transform3D(Basis.looking_at((point - controllers[1].global_position).normalized(), Vector3.UP), controllers[1].global_position)
+	if battle.phase == Battle.Phase.PLAYING:
+		var goal := point
+		if plane.flight.ground and preview_t < 2.6:
+			goal = plane.global_position + plane.forward() * 2.0
+		out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6))
 	# Camera follows the action a little so the shots frame the plane.
 	if battle.phase == Battle.Phase.PLAYING and plane.visible:
 		var want := Basis.looking_at((plane.global_position - head.global_position).normalized(), Vector3.UP)

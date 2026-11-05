@@ -1,33 +1,34 @@
 class_name PlayerPlane
 extends Node3D
-## The player's cartoon fighter. It really flies: it sits on the floor, rolls
-## and takes off, always moves forward, turns toward the spot the right
-## controller points at, banks, loses speed in climbs, bounces off real walls,
-## and spirals down in smoke when shot to pieces.
+## The player's plane, flown by hand like a radio-controlled model — nothing
+## is automatic. It sits on the real floor; you open the throttle, roll down
+## the "runway", pull back to lift off, bank to turn, and can land again
+## anywhere flat (floor or table top). Too slow and it stalls; touch down too
+## hard and it crashes. Parked on the ground it repairs and rearms.
 ##
-## Right trigger  guns              Right grip  hold = lock (up to 4), release = rockets
-## A              bomb              B           barrel roll (dodges fire)
-## Left trigger   boost
+## Left stick   ↑↓ throttle (stays where you leave it)   ←→ rudder / ground steering
+## Right stick  ↑↓ pitch (pull back = nose up)            ←→ roll
+## Right trigger guns   Right grip hold = lock, release = rockets
+## A bomb   B barrel roll   Left trigger boost   Left grip brakes
 
-enum State { PARKED, TAKEOFF, FLYING, CRASHING, WRECKED }
+enum State { PARKED, FLYING, CRASHING, WRECKED }
 
 var battle = null
 var hand: XRController3D = null
 var model: Dictionary = {}
 var state: State = State.PARKED
-var flight: Dictionary = {"pos": Vector3.ZERO, "fwd": Vector3.FORWARD, "speed": 0.0, "bank": 0.0}
+var flight: Dictionary = {"pos": Vector3.ZERO, "basis": Basis.IDENTITY, "speed": 0.0, "sink": 0.0, "ground": true}
 var hp: float = WarMath.PLANE_HP
 var rockets: int = WarMath.ROCKETS
 var bombs: int = WarMath.BOMBS
 var boost: float = 1.0
 var boosting: bool = false
+var throttle: float = 0.0
+var stalling: bool = false
 var locks: Array = []
 var hit_flash: float = 0.0
-var ground_y: float = 0.0
 var velocity: Vector3 = Vector3.ZERO
-var steer_target: Vector3 = Vector3.ZERO
 var gear_height: float = WarMath.GEAR_HEIGHT
-var parked_pitch: float = 11.0
 var _rpm: float = 0.0
 var _gun_cd: float = 0.0
 var _barrel: int = 0
@@ -40,10 +41,11 @@ var _bomb_reload: float = 0.0
 var _roll_t: float = -1.0
 var _roll_cd: float = 0.0
 var _roll_dir: float = 1.0
-var _gear: float = 1.0
-var _air_time: float = 0.0
 var _smoke_t: float = 0.0
 var _crash_spin: float = 0.0
+var _crash_fwd: Vector3 = Vector3.FORWARD
+var _crash_speed: float = 0.0
+var _stall_beep: float = 0.0
 var _shadow: MeshInstance3D
 var _engine: AudioStreamPlayer3D
 var _sight: MeshInstance3D
@@ -51,13 +53,13 @@ var _sight: MeshInstance3D
 
 func _ready() -> void:
 	model = Models.player_plane(0.0018) if Models.has_player_model() else Models.fighter(Models.PLAYER, 0.0022)
-	gear_height = model.get("gear_height", WarMath.GEAR_HEIGHT)
-	parked_pitch = model.get("parked_pitch", 11.0)
+	(model.root as Node3D).scale = Vector3.ONE * WarMath.PLANE_SCALE
+	gear_height = float(model.get("gear_height", WarMath.GEAR_HEIGHT)) * WarMath.PLANE_SCALE
 	add_child(model.root)
-	_shadow = Toon.shadow_blob(0.3)
+	_shadow = Toon.shadow_blob(0.22)
 	add_child(_shadow)
-	# Gun sight: a small ring 1.2 m ahead of the nose.
-	_sight = Toon.add(self, Toon.torus(0.025, 0.0018, 24), Toon.flat(Color(1.0, 0.95, 0.5, 0.9)))
+	# Gun sight: a small ring 0.9 m ahead of the nose.
+	_sight = Toon.add(self, Toon.torus(0.02, 0.0016, 24), Toon.flat(Color(1.0, 0.95, 0.5, 0.9)))
 	_sight.top_level = true
 	_engine = AudioStreamPlayer3D.new()
 	var stream = load("res://assets/audio/engine.wav")
@@ -74,26 +76,23 @@ func _ready() -> void:
 
 # --- life cycle -------------------------------------------------------------------
 
-## Parks the plane on a surface, nose along `heading`, tail resting on its wheel.
 func park(at: Vector3, heading: Vector3, surface_y: float) -> void:
 	var h := heading
 	h.y = 0.0
 	h = h.normalized() if h.length() > 0.01 else Vector3.FORWARD
-	ground_y = surface_y
 	state = State.PARKED
 	hp = WarMath.PLANE_HP
 	rockets = WarMath.ROCKETS
 	bombs = WarMath.BOMBS
 	boost = 1.0
+	throttle = 0.0
 	locks.clear()
 	_salvo.clear()
 	_roll_t = -1.0
-	_gear = 1.0
 	_rpm = 0.0
-	_air_time = 0.0
 	visible = true
-	flight = {"pos": Vector3(at.x, surface_y + gear_height, at.z), "fwd": h, "speed": 0.0, "bank": 0.0}
-	_apply_pose(0.0)
+	flight = {"pos": Vector3(at.x, surface_y + gear_height, at.z), "basis": Basis.looking_at(h, Vector3.UP), "speed": 0.0, "sink": 0.0, "ground": true}
+	_apply_pose()
 	refresh_stores()
 	if _engine.playing:
 		_engine.stop()
@@ -102,21 +101,26 @@ func park(at: Vector3, heading: Vector3, surface_y: float) -> void:
 func start_engine() -> void:
 	if state != State.PARKED:
 		return
-	state = State.TAKEOFF
+	state = State.FLYING
+	throttle = 0.0
 	if _engine.stream:
 		_engine.play()
 
 
 func alive() -> bool:
-	return state == State.FLYING or state == State.TAKEOFF
-
-
-func airborne() -> bool:
 	return state == State.FLYING
 
 
+func airborne() -> bool:
+	return state == State.FLYING and not flight.ground
+
+
+func on_ground() -> bool:
+	return state == State.FLYING and flight.ground
+
+
 func forward() -> Vector3:
-	return flight.fwd
+	return -(flight.basis as Basis).z
 
 
 func hit_center() -> Vector3:
@@ -129,18 +133,17 @@ func nose() -> Vector3:
 
 # --- per frame --------------------------------------------------------------------------
 
-func tick(delta: float, aim_point: Vector3, trigger: float, grip: float, boost_in: float) -> void:
+## inp: {pitch, roll, yaw, throttle_delta, boost, brake} from the sticks.
+func tick(delta: float, inp: Dictionary, trigger: float, grip: float) -> void:
 	hit_flash = maxf(0.0, hit_flash - delta * 4.0)
-	steer_target = aim_point
 	var prev: Vector3 = flight.pos
 	match state:
 		State.PARKED:
 			_rpm = move_toward(_rpm, 0.0, delta * 2.0)
-		State.TAKEOFF:
-			_takeoff(delta)
 		State.FLYING:
-			_fly(delta, aim_point, boost_in)
-			_weapons(delta, trigger, grip)
+			_fly(delta, inp)
+			if state == State.FLYING:
+				_weapons(delta, trigger, grip)
 		State.CRASHING:
 			_crash(delta)
 		State.WRECKED:
@@ -153,69 +156,80 @@ func tick(delta: float, aim_point: Vector3, trigger: float, grip: float, boost_i
 	_animate(delta)
 
 
-func _takeoff(delta: float) -> void:
-	_rpm = move_toward(_rpm, 1.0, delta * 1.5)
-	if _rpm < 0.6:
-		return
-	flight.speed = minf(WarMath.CRUISE, flight.speed + delta * 1.1)
-	var fwd: Vector3 = flight.fwd
-	fwd.y = 0.0
-	fwd = fwd.normalized()
-	if flight.speed >= WarMath.TAKEOFF_SPEED:
-		_air_time += delta
-		fwd = (fwd + Vector3(0, 0.55, 0)).normalized()
-	flight.fwd = fwd
-	flight.pos += fwd * flight.speed * delta
-	flight.pos.y = maxf(flight.pos.y, ground_y + gear_height)
-	if flight.pos.y > ground_y + 0.3:
-		state = State.FLYING
-		if battle:
-			battle.on_airborne()
-	_hit_walls(flight.pos - fwd * flight.speed * delta)
-
-
-func _fly(delta: float, aim_point: Vector3, boost_in: float) -> void:
-	_air_time += delta
-	_rpm = move_toward(_rpm, 1.0 + (0.3 if boosting else 0.0), delta * 2.0)
-	boosting = boost_in > 0.5 and boost > 0.02
+func _fly(delta: float, inp: Dictionary) -> void:
+	throttle = clampf(throttle + float(inp.get("throttle_delta", 0.0)) * delta * 0.8, 0.0, 1.0)
+	if inp.has("throttle"):
+		throttle = float(inp.throttle)
+	boosting = bool(inp.get("boost", false)) and boost > 0.02 and not flight.ground
 	if boosting:
 		boost = maxf(0.0, boost - delta / WarMath.BOOST_SECONDS)
 	else:
 		boost = minf(1.0, boost + WarMath.BOOST_RECHARGE * delta)
-	var want := WarMath.BOOST if boosting else WarMath.CRUISE
+	_rpm = move_toward(_rpm, 0.25 + throttle * 0.75 + (0.3 if boosting else 0.0), delta * 2.0)
+	var under: float = battle.surface_below(flight.pos + Vector3(0, 0.05, 0)) if battle else 0.0
 	var before: Vector3 = flight.pos
-	var box: Dictionary = battle.box if battle else {"min": Vector3(-2, 0, -2), "max": Vector3(2, 2.5, 2)}
-	flight = WarMath.fly(flight, aim_point, want, delta, box)
-	# Keep clear of the floor and furniture tops under the plane.
-	var floor_here: float = battle.surface_below(flight.pos) if battle else 0.0
-	if flight.pos.y < floor_here + 0.09:
-		if flight.fwd.y < -0.35 and _air_time > 0.5:
-			_scrape(Vector3.UP, flight.pos)
-		flight.pos.y = floor_here + 0.09
-		flight.fwd = (flight.fwd + Vector3(0, 0.6, 0)).normalized()
+	var step := {"pitch": inp.get("pitch", 0.0), "roll": inp.get("roll", 0.0), "yaw": inp.get("yaw", 0.0), "throttle": throttle, "boost": boosting, "brake": inp.get("brake", false)}
+	if _roll_t >= 0.0:
+		step.roll = 0.0
+	var was_ground: bool = flight.ground
+	var r := WarMath.rc_fly(flight, step, delta, under, gear_height)
+	# Rolling off a table edge: start falling instead of floating.
+	if was_ground and r.ground:
+		var under_now: float = battle.surface_below(r.pos + Vector3(0, 0.05, 0)) if battle else 0.0
+		if under_now < under - 0.05:
+			r.ground = false
+			r.pos.y = under + gear_height
+		elif under_now > under + 0.05:
+			_scrape(-forward(), r.pos)
+			r.pos = before
+			r.speed = 0.0
+	flight = {"pos": r.pos, "basis": r.basis, "speed": r.speed, "sink": r.sink, "ground": r.ground}
+	match r.event:
+		"liftoff":
+			if battle:
+				battle.on_airborne()
+		"landed":
+			if battle:
+				battle.cue("thud", flight.pos, -4.0)
+				Fx.smoke(battle, flight.pos - Vector3(0, gear_height * 0.8, 0), 0.02)
+		"crash":
+			_scrape(Vector3.UP, flight.pos - Vector3(0, gear_height, 0))
+			take_hit(WarMath.CRASH_DAMAGE * 2.0, true)
+	stalling = not flight.ground and flight.speed < WarMath.STALL
+	if stalling and battle:
+		_stall_beep -= delta
+		if _stall_beep <= 0.0:
+			_stall_beep = 0.35
+			battle.cue("warning", global_position, -8.0)
 	_hit_walls(before)
 	if _roll_t >= 0.0:
 		_roll_t += delta
 		if _roll_t >= WarMath.ROLL_TIME:
 			_roll_t = -1.0
 	_roll_cd = maxf(0.0, _roll_cd - delta)
-	_gear = move_toward(_gear, 0.0, delta * 2.5) if _air_time > 0.6 else _gear
+	# Parked on the ground with the engine idling: patch up and rearm.
+	if flight.ground and flight.speed < 0.05:
+		repair(6.0 * delta)
+		_rocket_reload -= delta
+		_bomb_reload -= delta * 2.0
 
 
 ## Real walls (physics) or the room box: bounce off with damage.
 func _hit_walls(before: Vector3) -> void:
 	if battle == null:
 		return
-	var w: Dictionary = battle.wall_hit(before, flight.pos + flight.fwd * 0.12)
-	if w.is_empty():
+	var w: Dictionary = battle.wall_hit(before + Vector3(0, 0.02, 0), (flight.pos as Vector3) + forward() * 0.09 + Vector3(0, 0.02, 0))
+	if w.is_empty() or (w.normal as Vector3).y > 0.7:
 		return
 	_scrape(w.normal, w.position)
 	var n: Vector3 = w.normal
-	flight.pos = w.position + n * 0.18 - flight.fwd * 0.05
-	var r: Vector3 = flight.fwd.bounce(n)
-	r.y = clampf(r.y, -0.3, 0.4)
-	flight.fwd = r.normalized()
-	flight.speed *= 0.6
+	flight.pos = (w.position as Vector3) + n * 0.14 - Vector3(0, 0.02, 0)
+	var r: Vector3 = forward().bounce(n)
+	if flight.ground:
+		r.y = 0.0
+	r = r.normalized()
+	flight.basis = Basis.looking_at(r, Vector3.UP)
+	flight.speed *= 0.4
 
 
 func _scrape(normal: Vector3, at: Vector3) -> void:
@@ -229,63 +243,54 @@ func _scrape(normal: Vector3, at: Vector3) -> void:
 
 func _crash(delta: float) -> void:
 	_crash_spin += delta * 7.0
-	var fwd: Vector3 = flight.fwd
-	fwd = (fwd + Vector3(0, -1.6 * delta, 0)).normalized()
-	flight.fwd = fwd
-	flight.speed = minf(2.4, flight.speed + delta * 1.5)
-	flight.pos += fwd * flight.speed * delta
+	_crash_fwd = (_crash_fwd + Vector3(0, -1.6 * delta, 0)).normalized()
+	_crash_speed = minf(2.2, _crash_speed + delta * 1.5)
+	flight.pos += _crash_fwd * _crash_speed * delta
 	_smoke_t -= delta
 	if _smoke_t <= 0.0 and battle:
 		_smoke_t = 0.04
-		Fx.smoke(battle, global_position, 0.025, true)
+		Fx.smoke(battle, global_position, 0.02, true)
 	var ground: float = battle.surface_below(flight.pos) if battle else 0.0
-	var w: Dictionary = battle.wall_hit(flight.pos - fwd * flight.speed * delta, flight.pos) if battle else {}
-	if flight.pos.y <= ground + 0.03 or not w.is_empty():
-		flight.pos.y = maxf(flight.pos.y, ground + 0.03)
+	var w: Dictionary = battle.wall_hit((flight.pos as Vector3) - _crash_fwd * _crash_speed * delta, flight.pos) if battle else {}
+	if (flight.pos as Vector3).y <= ground + 0.02 or not w.is_empty():
+		flight.pos.y = maxf(flight.pos.y, ground + 0.02)
 		state = State.WRECKED
 		_rpm = 0.0
 		_engine.stop()
 		if battle:
-			Fx.explosion(battle, flight.pos, 0.12)
-			Fx.mark(battle, Vector3(flight.pos.x, ground, flight.pos.z), Vector3.UP, 0.3)
+			Fx.explosion(battle, flight.pos, 0.1)
+			Fx.mark(battle, Vector3(flight.pos.x, ground, flight.pos.z), Vector3.UP, 0.25)
 			battle.cue("boom_big", flight.pos)
 			battle.shake(1.0)
 			battle.on_plane_destroyed()
 
 
-func _apply_pose(delta: float) -> void:
+func _apply_pose() -> void:
 	global_position = flight.pos
-	var roll := 0.0
+	if state == State.CRASHING:
+		global_basis = Basis.looking_at(_crash_fwd, Vector3.UP if absf(_crash_fwd.y) < 0.98 else Vector3.BACK) * Basis(Vector3.FORWARD, _crash_spin)
+		return
+	var b: Basis = flight.basis
 	if _roll_t >= 0.0:
 		var u := _roll_t / WarMath.ROLL_TIME
-		roll = TAU * u * u * (3.0 - 2.0 * u) * _roll_dir
-	if state == State.CRASHING:
-		roll = _crash_spin
-	if state == State.PARKED or (state == State.TAKEOFF and flight.speed < WarMath.TAKEOFF_SPEED):
-		# Taildragger: nose up ~11° on its wheels.
-		var b := Basis.looking_at(flight.fwd, Vector3.UP)
-		global_basis = b * Basis(Vector3.RIGHT, deg_to_rad(parked_pitch))
-	else:
-		global_basis = WarMath.plane_basis(flight.fwd, flight.bank, roll)
+		b = b * Basis(Vector3.FORWARD, TAU * u * u * (3.0 - 2.0 * u) * _roll_dir)
+	global_basis = b
 
 
 func _animate(delta: float) -> void:
-	_apply_pose(delta)
-	(model.prop as Node3D).rotate_object_local(Vector3.FORWARD, delta * (6.0 + 70.0 * _rpm))
+	_apply_pose()
+	(model.prop as Node3D).rotate_object_local(Vector3.FORWARD, delta * (4.0 + 70.0 * _rpm) * (1.0 if state == State.FLYING else 0.2))
 	var blur := model.blur as MeshInstance3D
-	(blur.material_override as ShaderMaterial).set_shader_parameter("albedo", Color(0.25, 0.25, 0.28, clampf((_rpm - 0.4) * 0.5, 0.0, 0.3)))
-	for g in model.gear:
-		(g as Node3D).rotation.x = lerpf(-1.45, 0.0, _gear)
-	# Shadow on whatever is underneath.
-	var under: float = battle.surface_below(global_position) if battle else 0.0
+	(blur.material_override as ShaderMaterial).set_shader_parameter("albedo", Color(0.25, 0.25, 0.28, clampf((_rpm - 0.35) * 0.5, 0.0, 0.3)))
+	var under: float = battle.surface_below(global_position + Vector3(0, 0.02, 0)) if battle else 0.0
 	var h := maxf(0.0, global_position.y - under)
 	_shadow.visible = state != State.WRECKED
 	_shadow.global_position = Vector3(global_position.x, under + 0.003, global_position.z)
 	_shadow.scale = Vector3.ONE * clampf(1.0 - h * 0.25, 0.45, 1.0)
 	(_shadow.material_override as StandardMaterial3D).albedo_color.a = clampf(0.55 - h * 0.18, 0.12, 0.55)
-	_sight.visible = state == State.FLYING
+	_sight.visible = airborne()
 	if _sight.visible:
-		var at := nose() + forward() * 1.2
+		var at := nose() + forward() * 0.9
 		_sight.global_position = at
 		var cam := get_viewport().get_camera_3d()
 		if cam:
@@ -293,17 +298,15 @@ func _animate(delta: float) -> void:
 			if to_cam.length() > 0.05:
 				_sight.look_at(at - to_cam, Vector3.UP if absf(to_cam.normalized().y) < 0.98 else Vector3.RIGHT)
 				_sight.rotate_object_local(Vector3.RIGHT, PI * 0.5)
-	# Engine note follows speed.
 	if _engine.playing:
-		_engine.pitch_scale = clampf(0.55 + _rpm * 0.35 + float(flight.speed) * 0.22, 0.4, 2.0)
-		_engine.volume_db = -14.0 + (3.0 if boosting else 0.0)
-	# Damage smoke.
+		_engine.pitch_scale = clampf(0.5 + _rpm * 0.45 + float(flight.speed) * 0.25, 0.4, 2.0)
+		_engine.volume_db = -16.0 + _rpm * 4.0 + (2.0 if boosting else 0.0)
 	if alive() and hp < WarMath.PLANE_HP * 0.5 and battle:
 		_smoke_t -= delta
 		if _smoke_t <= 0.0:
 			_smoke_t = 0.07 if hp < WarMath.PLANE_HP * 0.25 else 0.14
 			var ex: Node3D = model.exhaust[randi() % 2]
-			Fx.smoke(battle, ex.global_position, 0.014, hp < WarMath.PLANE_HP * 0.25)
+			Fx.smoke(battle, ex.global_position, 0.012, hp < WarMath.PLANE_HP * 0.25)
 
 
 # --- weapons ------------------------------------------------------------------------------------
@@ -357,7 +360,7 @@ func _fire_guns() -> void:
 	# Two guns per burst, alternating inner/outer pairs; converge 1.2 m ahead.
 	var pair := [_barrel, _barrel + 2]
 	_barrel = 1 - _barrel
-	var converge := nose() + forward() * 1.2
+	var converge := nose() + forward() * 0.9
 	for i in pair:
 		var m: Node3D = model.muzzles[i]
 		var dir := (converge - m.global_position).normalized()
@@ -428,7 +431,7 @@ func barrel_roll() -> bool:
 		return false
 	_roll_t = 0.0
 	_roll_cd = WarMath.ROLL_COOLDOWN
-	_roll_dir = -1.0 if flight.bank > 0.0 else 1.0
+	_roll_dir = -1.0 if WarMath.bank_of(flight.basis) > 0.0 else 1.0
 	if battle:
 		battle.cue("whoosh", global_position)
 	_haptic(0.3, 0.1)
@@ -450,6 +453,8 @@ func take_hit(amount: float, crash: bool = false) -> void:
 	if hp <= 0.0:
 		state = State.CRASHING
 		_crash_spin = 0.0
+		_crash_fwd = forward()
+		_crash_speed = maxf(0.6, float(flight.speed))
 		locks.clear()
 		_salvo.clear()
 		if battle:

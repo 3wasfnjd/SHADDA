@@ -1,7 +1,8 @@
 extends SceneTree
-## Headless room war through the real classes: room with a window, a door and
-## a table → plane parked on the floor → takeoff → free flight stays in the
-## room → guns pop a balloon → rocket lock kills a fighter that flew in the
+## Headless room war through the real classes, the plane flown with stick
+## inputs (an autopilot stands in for the player's hands): room with a window,
+## a door and a table → plane parked on the floor → takeoff roll → flight →
+## landing, repair and second takeoff → guns pop a balloon → rocket lock kills a fighter that flew in the
 ## window → cargo drop puts flak guns down → bomb kills one → tank drives in
 ## the door → barrel roll → shot down → crash → results → replay → all five
 ## waves with the bomber → save.
@@ -14,7 +15,7 @@ var battle: Battle
 var aim_at := Vector3(0, 1.3, -1.0)
 var tr := 0.0
 var gr := 0.0
-var tl := 0.0
+var manual = null          # stick inputs override for a step
 var DT := 1.0 / 72.0
 
 
@@ -24,7 +25,8 @@ func _initialize() -> void:
 
 func _frame() -> void:
 	var o := head.global_position + Vector3(0.15, -0.3, 0)
-	battle.update_controls(DT, o, (aim_at - o).normalized(), tr, gr, tl)
+	var inp: Dictionary = manual if manual != null else WarMath.autopilot(plane.flight, WarMath.clamp_into(aim_at, battle.box, 0.6, 0.55))
+	battle.update_controls(DT, o, (aim_at - o).normalized(), inp, tr, gr)
 	await physics_frame
 
 
@@ -69,25 +71,52 @@ func _run() -> void:
 	assert(plane.state == PlayerPlane.State.PARKED and absf(plane.global_position.y - plane.gear_height) < 1e-3, "parked on the floor")
 
 	print("STAGE: Take off.")
-	# Take off.
 	battle.auto_spawn = false
 	battle.start_match()
-	assert(plane.state == PlayerPlane.State.TAKEOFF)
-	assert(await _until(func(): return plane.state == PlayerPlane.State.FLYING, 72 * 6), "took off")
+	assert(plane.state == PlayerPlane.State.FLYING and plane.flight.ground)
+	# Engine idles: with the throttle closed it stays put.
+	manual = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
+	await _until(func(): return false, 72)
+	assert(plane.flight.speed < 0.01 and plane.on_ground(), "stays parked with the throttle closed")
+	manual = null
+	aim_at = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
+	assert(await _until(func(): return plane.airborne(), 72 * 6), "rolled and lifted off")
 	assert(battle._waves_started and battle.wave == 0)
 	battle._queue.clear()
-	await _until(func(): return false, 72)
-	assert(plane._gear < 0.05, "gear up")
-	print("STAGE: Free flight: chases the pointer, never leaves the room.")
-	# Free flight: chases the pointer, never leaves the room.
-	var target := Vector3(-1.0, 1.5, -1.6)
+	print("STAGE: Fly to a spot by hand.")
+	var target := Vector3(-0.8, 1.4, -1.4)
 	aim_at = target
 	var closest := INF
-	for i in range(72 * 6):
+	for i in range(72 * 8):
 		await _frame()
-		assert(WarMath.inside(plane.global_position, battle.box, 0.0), "inside: %s" % [plane.global_position])
-		closest = minf(closest, plane.global_position.distance_to(plane.steer_target))
-	assert(closest < 0.35, "reached the pointed spot (%f)" % closest)
+		closest = minf(closest, plane.global_position.distance_to(target))
+		if closest < 0.3:
+			break
+	assert(closest < 0.3, "reached the spot (%f)" % closest)
+	assert(plane.hp > 60.0, "no bad crashes on the way (%f)" % plane.hp)
+	print("STAGE: Land on the floor, repair, take off again.")
+	var pitch_down := Basis.looking_at(Vector3(0, -0.11, -1).normalized(), Vector3.UP)
+	plane.flight = {"pos": Vector3(0.2, 0.3, 0.6), "basis": pitch_down, "speed": 0.75, "sink": 0.0, "ground": false}
+	manual = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.35}
+	assert(await _until(func(): return plane.on_ground(), 72 * 4), "touched down")
+	plane.hp = 60.0
+	manual = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0, "brake": true}
+	assert(await _until(func(): return plane.flight.speed < 0.01, 72 * 4), "braked to a stop")
+	var hp_landed := plane.hp
+	await _until(func(): return false, 72)
+	assert(plane.hp > hp_landed + 3.0 and plane.state == PlayerPlane.State.FLYING, "repairs while parked")
+	manual = null
+	aim_at = Vector3(0.2, 1.4, -1.2)
+	assert(await _until(func(): return plane.airborne(), 72 * 6), "second takeoff")
+	print("STAGE: A hard touchdown hurts.")
+	var hp_before := plane.hp
+	plane.flight = {"pos": Vector3(0.0, 0.5, -0.5), "basis": Basis.looking_at(Vector3(0, -0.8, -1).normalized(), Vector3.UP), "speed": 1.3, "sink": 0.0, "ground": false}
+	manual = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 1.0}
+	assert(await _until(func(): return plane.hp < hp_before, 72 * 3), "hard landing damages")
+	manual = null
+	plane.hp = WarMath.PLANE_HP
+	aim_at = Vector3(0.0, 1.4, -1.0)
+	await _until(func(): return plane.airborne() and plane.global_position.y > 0.9, 72 * 8)
 
 	print("STAGE: Guns pop a balloon.")
 	# Guns pop a balloon.
@@ -146,13 +175,14 @@ func _run() -> void:
 	var h := 0.75
 	var fwd := Vector3(0, 0, -1)
 	var fall := sqrt(2.0 * h / (WarMath.GRAVITY * 0.85))
-	plane.flight.pos = aa.global_position + Vector3(0, h, 0) - fwd * WarMath.CRUISE * fall
-	plane.flight.fwd = fwd
-	plane.flight.speed = WarMath.CRUISE
-	aim_at = plane.flight.pos + fwd * 3.0
+	var spd := 1.0
+	plane.flight = {"pos": aa.global_position + Vector3(0, h, 0) - fwd * spd * fall, "basis": Basis.looking_at(fwd, Vector3.UP), "speed": spd, "sink": 0.0, "ground": false}
+	manual = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.9}
 	await _frame()
 	assert(plane.drop_bomb())
 	assert(await _until(func(): return _gone(aid), 72 * 3), "bomb killed the flak gun")
+	manual = null
+	aim_at = Vector3(0.0, 1.4, -1.0)
 	await _until(func(): return not is_instance_valid(t) or t.state != Enemy.State.ACTIVE, 72 * 20)
 
 	print("STAGE: A tank drives in through the door onto the floor.")
@@ -178,10 +208,13 @@ func _run() -> void:
 	assert(plane.state == PlayerPlane.State.WRECKED and not battle.won)
 	battle._phase_t = 2.0
 	battle.on_button(&"ax_button", 1)
-	assert(battle.phase == Battle.Phase.PLAYING and plane.state == PlayerPlane.State.TAKEOFF, "replay from the floor")
+	assert(battle.phase == Battle.Phase.PLAYING and plane.on_ground(), "replay from the floor")
+	aim_at = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
+	assert(await _until(func(): return plane.airborne(), 72 * 6))
 
 	print("STAGE: Full war.")
 	# Full war.
+	aim_at = Vector3(0.0, 1.4, -1.0)
 	battle.auto_spawn = true
 	var seen := {}
 	var ok := await _until(func():
@@ -197,7 +230,7 @@ func _run() -> void:
 	assert(ok, "war finished at wave %d" % battle.wave)
 	assert(battle.won and seen.has("bomber") and seen.has("transport") and seen.has("tank") and seen.has("balloon"), "all kinds %s" % [seen])
 	assert(int(battle.save.best) == battle.score and battle.score > 0)
-	print("PASS: room war — parked, takeoff, free flight in the room, guns, rocket lock, cargo drop on real surfaces, bomb, tank through the door, roll, crash, replay, 5 waves + bomber, save (%d)" % battle.score)
+	print("PASS: room war — parked, throttle, takeoff roll, hand flight, landing + repair + second takeoff, hard landing, guns, rocket lock, cargo drop on real surfaces, bomb, tank through the door, roll, crash, replay, 5 waves + bomber, save (%d)" % battle.score)
 	quit(0)
 
 

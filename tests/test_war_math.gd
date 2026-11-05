@@ -69,7 +69,52 @@ func _initialize() -> void:
 	assert(WarMath.combo(1) == 1.0 and WarMath.combo(9) == 3.0)
 	assert(WarMath.stars(0.8, true) == 3 and WarMath.stars(0.9, false) == 0)
 	assert(WarMath.WAVES.size() == 5 and WarMath.WAVES[4].has("bomber"))
-	print("PASS: war math (free flight stays in the room, reaches the steer point, banks, climbs cost speed; hits; ballistics; walls with openings)")
+	# Hand-flown model: right stick right banks right and turns right.
+	var rc := {"pos": Vector3(0, 1.2, 0), "basis": Basis.looking_at(Vector3.FORWARD, Vector3.UP), "speed": 1.0, "sink": 0.0, "ground": false}
+	var right := {"pitch": 0.0, "roll": 1.0, "yaw": 0.0, "throttle": 0.8, "boost": false, "brake": false}
+	var idle := {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.8, "boost": false, "brake": false}
+	var r1 := WarMath.rc_fly(rc, right, 0.2, 0.0, 0.06)
+	assert(WarMath.bank_of(r1.basis) > 0.3, "banks right")
+	for i in range(72):
+		r1 = WarMath.rc_fly(r1, idle, 1.0 / 72.0, 0.0, 0.06)
+	assert((-(r1.basis as Basis).z).x > 0.2, "turned right")
+	assert(absf(WarMath.bank_of(r1.basis)) < 0.15, "wings level themselves when the stick is centred")
+	# No throttle: it slows, stalls and sinks.
+	var st2 := {"pos": Vector3(0, 1.5, 0), "basis": Basis.looking_at(Vector3.FORWARD, Vector3.UP), "speed": 0.8, "sink": 0.0, "ground": false}
+	var cut := {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0, "boost": false, "brake": false}
+	for i in range(72 * 2):
+		st2 = WarMath.rc_fly(st2, cut, 1.0 / 72.0, 0.0, 0.06)
+	assert(st2.speed < WarMath.STALL and st2.pos.y < 1.3, "stalls and sinks without power")
+	# On the ground with the throttle closed it does not move; full throttle + pull = liftoff.
+	var g := {"pos": Vector3(0, 0.06, 0), "basis": Basis.looking_at(Vector3.FORWARD, Vector3.UP), "speed": 0.0, "sink": 0.0, "ground": true}
+	g = WarMath.rc_fly(g, cut, 0.5, 0.0, 0.06)
+	assert(g.ground and g.speed == 0.0)
+	var go := {"pitch": 1.0, "roll": 0.0, "yaw": 0.0, "throttle": 1.0, "boost": false, "brake": false}
+	var lifted := false
+	for i in range(72 * 4):
+		g = WarMath.rc_fly(g, go, 1.0 / 72.0, 0.0, 0.06)
+		if not g.ground:
+			lifted = true
+			break
+	assert(lifted, "takes off from the floor")
+	# Gentle descent lands; steep dive crashes.
+	var soft := {"pos": Vector3(0, 0.2, 0), "basis": Basis.looking_at(Vector3(0, -0.1, -1).normalized(), Vector3.UP), "speed": 0.7, "sink": 0.0, "ground": false}
+	var ev := ""
+	for i in range(72 * 4):
+		soft = WarMath.rc_fly(soft, {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.3, "boost": false, "brake": false}, 1.0 / 72.0, 0.0, 0.06)
+		if soft.event != "":
+			ev = soft.event
+			break
+	assert(ev == "landed", "soft touchdown lands (%s)" % ev)
+	var hard := {"pos": Vector3(0, 0.3, 0), "basis": Basis.looking_at(Vector3(0, -0.9, -1).normalized(), Vector3.UP), "speed": 1.3, "sink": 0.0, "ground": false}
+	ev = ""
+	for i in range(72 * 2):
+		hard = WarMath.rc_fly(hard, idle, 1.0 / 72.0, 0.0, 0.06)
+		if hard.event != "":
+			ev = hard.event
+			break
+	assert(ev == "crash", "steep dive into the floor crashes (%s)" % ev)
+	print("PASS: war math (hand flight: bank-to-turn, wing leveller, stall, idle on ground, takeoff, soft landing, crash; enemy flight stays in the room, reaches the steer point, banks, climbs cost speed; hits; ballistics; walls with openings)")
 	quit(0)
 
 var _elapsed := 0.0

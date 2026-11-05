@@ -1,7 +1,8 @@
 class_name RoomScan
 extends Node
-## Loads Meta's scene model (asking for the permission and the room setup
-## when needed) and turns the anchors into a plain room description:
+## Every launch starts with a fresh room scan (Meta's Space Setup), so the
+## game always uses the room you are standing in — never an old scan of
+## another room. Then the anchors become a plain room description:
 ## {floor_y, ceiling_y, walls, openings, surfaces, blocks, found}
 ## — see Room.describe() for the format.
 
@@ -36,11 +37,22 @@ func start(origin: Node3D, player_head: Node3D) -> void:
 		get_tree().on_request_permissions_result.connect(_on_permission)
 		if OS.request_permission("com.oculus.permission.USE_SCENE"):
 			_permitted = true
-			manager.call_deferred("create_scene_anchors")
+			_scan_now()
 		else:
-			_timer = -20.0
+			_timer = -60.0   # the permission dialog is up
 	else:
 		_permitted = true
+		_scan_now()
+
+
+## Opens Space Setup for the current room; anchors load when it finishes.
+## If the headset cannot run it, the existing scene data is used.
+func _scan_now() -> void:
+	if manager and bool(manager.call("is_scene_capture_supported")):
+		_capture_requested = true
+		manager.call_deferred("request_scene_capture", "")
+		_timer = -600.0   # the player is scanning; wait for the result
+	else:
 		manager.call_deferred("create_scene_anchors")
 
 
@@ -50,7 +62,7 @@ func _on_permission(permission: String, granted: bool) -> void:
 	if granted and manager != null:
 		_permitted = true
 		_timer = 0.0
-		manager.call_deferred("create_scene_anchors")
+		_scan_now()
 	else:
 		_finish()
 
@@ -67,13 +79,15 @@ func _on_missing() -> void:
 
 
 func _on_capture_completed(success: bool) -> void:
-	if success and manager != null:
-		if bool(manager.call("are_scene_anchors_created")):
-			manager.call("remove_scene_anchors")
-		manager.call("create_scene_anchors")
-		_timer = 0.0
-	else:
+	if manager == null:
 		_finish()
+		return
+	# Even if the scan was cancelled, load whatever the headset has.
+	if bool(manager.call("are_scene_anchors_created")):
+		manager.call("remove_scene_anchors")
+	anchors.clear()
+	manager.call("create_scene_anchors")
+	_timer = 0.0
 
 
 func anchor_ready(anchor: Node3D) -> void:

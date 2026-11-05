@@ -40,7 +40,6 @@ var _waves_started: bool = false
 var _ui_root: Node3D
 var _buttons: Array = []
 var _trigger_was: float = 0.0
-var _marker: Node3D
 var _bomb_ring: MeshInstance3D
 var _lock_marks: Array[Node3D] = []
 var _rng := RandomNumberGenerator.new()
@@ -67,11 +66,6 @@ func build(player_head: Node3D, player_plane: PlayerPlane, wrist: Hud) -> void:
 	room = Room.new()
 	add_child(room)
 	_load()
-	_marker = Node3D.new()
-	add_child(_marker)
-	Toon.add(_marker, Toon.torus(0.035, 0.005, 24), Toon.mat(Color(1.0, 0.82, 0.15), 0.4, 0.0015), Vector3.ZERO, Vector3(90, 0, 0))
-	Toon.add(_marker, Toon.ball(0.007, 8, 4), Toon.mat(Color(1.0, 0.82, 0.15), 0.4, 0.001))
-	_marker.visible = false
 	_bomb_ring = Toon.add(self, Toon.torus(0.07, 0.004, 28), Toon.flat(Color(1.0, 0.4, 0.15, 0.9)))
 	_bomb_ring.visible = false
 	for i in range(WarMath.LOCKS):
@@ -90,7 +84,7 @@ func on_room_ready(description: Dictionary) -> void:
 	fwd.y = 0.0
 	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
 	park_heading = fwd
-	var spot := head_position() + fwd * 1.0
+	var spot := head_position() + fwd * 1.25
 	spot = WarMath.clamp_into(spot, box, 0.55, 0.0)
 	spot.y = room.surface_below(Vector3(spot.x, head_position().y, spot.z))
 	park_spot = spot
@@ -185,19 +179,14 @@ func on_button(action: StringName, hand_index: int) -> void:
 
 
 ## Called every frame with the right controller's aim ray and the triggers.
-func update_controls(delta: float, origin: Vector3, dir: Vector3, trigger_r: float, grip_r: float, trigger_l: float) -> void:
+## Called every frame: the right controller's aim ray (for the buttons), the
+## stick inputs for the plane {pitch, roll, yaw, throttle_delta, boost, brake}
+## and the right trigger/grip.
+func update_controls(delta: float, origin: Vector3, dir: Vector3, inp: Dictionary, trigger_r: float, grip_r: float) -> void:
 	aim_origin = origin
 	aim_dir = dir.normalized()
-	var hit := room.wall_hit(origin, origin + aim_dir * 6.0)
-	var dist := 6.0 if hit.is_empty() else origin.distance_to(hit.position)
-	var goal := WarMath.steer_point(origin, aim_dir, dist, box)
-	plane.tick(delta, goal, trigger_r if phase == Phase.PLAYING else 0.0, grip_r if phase == Phase.PLAYING else 0.0, trigger_l)
-	_marker.visible = plane.airborne() and phase == Phase.PLAYING
-	if _marker.visible:
-		_marker.global_position = goal
-		var cam := get_viewport().get_camera_3d()
-		if cam:
-			_marker.look_at(cam.global_position, Vector3.UP if absf((cam.global_position - goal).normalized().y) < 0.98 else Vector3.RIGHT)
+	var live := phase == Phase.PLAYING
+	plane.tick(delta, inp if live else {}, trigger_r if live else 0.0, grip_r if live else 0.0)
 	# Point-and-pull buttons.
 	var pressed := trigger_r > 0.6 and _trigger_was <= 0.6
 	_trigger_was = trigger_r

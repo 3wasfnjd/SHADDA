@@ -15,6 +15,8 @@ var _flags: Array = []
 var _rockets: Array = []
 var _bombs: Array = []
 var _roll_dot: MeshInstance3D
+var _throttle_fill: MeshInstance3D
+var _stall: MeshInstance3D
 var _shown: float = 0.0
 var _target: int = 0
 var _bump: float = 0.0
@@ -57,6 +59,10 @@ func _ready() -> void:
 	Toon.add(self, Toon.block(Vector3(0.05, 0.006, 0.002)), Toon.mat(Color(0.2, 0.2, 0.22), 0.2, 0.0006), Vector3(0.031, -0.04, 0.001))
 	_boost_fill = Toon.add(self, Toon.block(Vector3(0.048, 0.004, 0.002)), Toon.mat(Color(0.35, 0.75, 1.0), 0.4, 0.0), Vector3(0.031, -0.04, 0.002))
 	_roll_dot = Toon.add(self, Toon.ball(0.004, 8, 4), Toon.unique(Toon.mat(Color(1.0, 0.8, 0.2), 0.4, 0.0005)), Vector3(0.056, -0.03, 0.003))
+	# Throttle: a vertical bar on the right edge; red lamp when stalling.
+	Toon.add(self, Toon.block(Vector3(0.008, 0.07, 0.002)), Toon.mat(Color(0.2, 0.2, 0.22), 0.2, 0.0006), Vector3(0.076, 0.004, 0.001))
+	_throttle_fill = Toon.add(self, Toon.block(Vector3(0.006, 0.068, 0.002)), Toon.mat(Color(1.0, 0.6, 0.15), 0.4, 0.0), Vector3(0.076, 0.004, 0.002))
+	_stall = Toon.add(self, Toon.ball(0.006, 10, 5), Toon.unique(Toon.mat(Color(0.3, 0.1, 0.1), 0.4, 0.0006)), Vector3(0.076, 0.048, 0.003))
 	# Off-screen arrow (world space, in front of the eyes).
 	_arrow = UI.icon("play", Color(1.0, 0.82, 0.15), 0.05, 0.008)
 	_arrow.top_level = true
@@ -102,6 +108,10 @@ func set_plane(p: PlayerPlane) -> void:
 		(_bombs[i] as Node3D).visible = i < p.bombs
 	_boost_fill.scale.x = maxf(0.001, p.boost)
 	_boost_fill.position.x = 0.031 - 0.024 * (1.0 - p.boost)
+	_throttle_fill.scale.y = maxf(0.001, p.throttle)
+	_throttle_fill.position.y = 0.004 - 0.034 * (1.0 - p.throttle)
+	var blink := p.stalling and fmod(Time.get_ticks_msec() / 1000.0, 0.3) < 0.15
+	((_stall.material_override) as ShaderMaterial).set_shader_parameter("albedo", Color(1.0, 0.15, 0.1) if blink else Color(0.3, 0.1, 0.1))
 	((_roll_dot.material_override) as ShaderMaterial).set_shader_parameter("albedo", Color(1.0, 0.8, 0.2) if p._roll_cd <= 0.0 else Color(0.4, 0.4, 0.4))
 
 
