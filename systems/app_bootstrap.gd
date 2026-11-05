@@ -163,9 +163,11 @@ func apply_settings() -> void:
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), _db(float(Profile.get_s("sfx"))))
 	var q := str(Profile.get_s("quality"))
 	var vp := get_viewport()
-	vp.msaa_3d = Viewport.MSAA_2X if q == "balanced" else Viewport.MSAA_4X
-	vp.scaling_3d_scale = {"balanced": 1.0, "high": 1.0, "ultra": 1.25}.get(q, 1.0)
+	# Kept conservative for the headset: 4× MSAA only on Ultra, native resolution.
+	vp.msaa_3d = Viewport.MSAA_4X if q == "ultra" else Viewport.MSAA_2X
+	vp.scaling_3d_scale = 1.0
 	Debris.effects_high = str(Profile.get_s("effects")) == "high"
+	Fx.budget = 60 if Debris.effects_high else 35
 	if plane:
 		plane.aim_assist = bool(Profile.get_s("aim_assist"))
 		plane.leveler = bool(Profile.get_s("leveler"))
@@ -180,8 +182,6 @@ func apply_settings() -> void:
 		# Fixed foveation: stronger on Balanced, gentle on Ultra; dynamic on all.
 		if "foveation_level" in xr:
 			xr.foveation_level = {"balanced": 3, "high": 2, "ultra": 1}.get(q, 2)
-		if "foveation_dynamic" in xr:
-			xr.foveation_dynamic = true
 		if xr.has_method("set_cpu_level"):
 			var lvl := OpenXRInterface.PERF_SETTINGS_LEVEL_SUSTAINED_HIGH if q != "balanced" else OpenXRInterface.PERF_SETTINGS_LEVEL_SUSTAINED_LOW
 			xr.set_cpu_level(lvl)
@@ -227,6 +227,9 @@ func _tracking_ready() -> bool:
 func _process(delta: float) -> void:
 	if failed:
 		return
+	# Focus comes back with the XR session even if Android never says so.
+	if not foreground and xr and not preview and xr.get_session_state() == OpenXRInterface.SESSION_STATE_FOCUSED:
+		foreground = true
 	var ready := foreground and _tracking_ready()
 	if ready and not positioned:
 		positioned = true
@@ -340,7 +343,7 @@ static var PREVIEW_ROOM := {
 
 
 func _open_preview() -> bool:
-	return preview_mode.begins_with("m") or preview_mode == "crash"
+	return preview_mode.begins_with("m") or preview_mode == "crash" or preview_mode == "soak"
 
 
 func _preview_room_visuals() -> void:
@@ -400,6 +403,8 @@ func _preview_input(delta: float) -> Array:
 	preview_t += delta
 	if preview_mode == "menus":
 		return _preview_menus(delta)
+	if preview_mode == "soak":
+		return _preview_soak(delta)
 	if _open_preview():
 		return _preview_campaign(delta)
 	var out: Array = [0.0, 0.0, {}]
@@ -500,6 +505,75 @@ func _preview_menus(_delta: float) -> Array:
 		var target := menus.panel.global_transform * Vector3(0.0, -0.02, 0.0)
 		aim.global_transform = Transform3D(Basis.looking_at((target - controllers[1].global_position).normalized(), Vector3.UP), controllers[1].global_position)
 	return [0.0, 0.0, {}]
+
+
+## SAQR_PREVIEW=soak: a long real sortie seen from a fixed standing head,
+## for checking that nothing vanishes over minutes of play.
+var _soak_shot := 0.0
+var _soak_stall := 0.0
+var _soak_idx := -1
+func _preview_soak(delta: float) -> Array:
+	var out: Array = [0.0, 0.0, {}]
+	if battle.phase == Battle.Phase.MENU:
+		if preview_t > 0.6:
+			Profile.progress.seen_controls = true
+			Profile.settings.difficulty = "easy"
+			battle.start_mission(0)
+		return out
+	var c: Campaign = battle.campaign
+	if c == null:
+		return out
+	if c.index != _soak_idx:
+		_soak_idx = c.index
+		_soak_stall = 0.0
+	_soak_stall += delta
+	var goal := c.center + Vector3(0, 1.3, 0)
+	if plane.flight.ground:
+		goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
+	elif c._ring_i < c._rings.size():
+		goal = c._rings[c._ring_i].pos
+	else:
+		var best := INF
+		for e in battle.enemies:
+			if e.alive() and e.state == Enemy.State.ACTIVE:
+				var d: float = e.hit_center().distance_to(plane.global_position)
+				if d < best:
+					best = d
+					goal = e.hit_center() + (Vector3(0, 0.7, 0) if e.kind in ["tank", "truck", "sam", "soldier", "fuel", "radar", "aa"] else Vector3.ZERO)
+	# Keep the flow moving: after 25 s on one mission, help it along.
+	if _soak_stall > 25.0 and c.mode == "play":
+		if c._ring_i < c._rings.size():
+			c._ring_i = c._rings.size() - 1
+		for e in battle.enemies.duplicate():
+			if e.alive() and e.state == Enemy.State.ACTIVE and randf() < 0.05:
+				battle._kill(e, "gun")
+		if c.id == "escort":
+			c.t = maxf(c.t, Campaign.ESCORT_TIME)
+	out[0] = 1.0 if fmod(preview_t, 1.4) < 0.8 else 0.0
+	out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75)
+	if plane.airborne() and fmod(preview_t, 5.0) < delta:
+		plane.use_special()
+	# A standing player looking ahead over the battle area.
+	head.global_basis = Basis.looking_at((battle.arena_center + Vector3(0, 1.0, 0) - head.global_position).normalized(), Vector3.UP)
+	_soak_shot += delta
+	if _soak_shot >= 10.0:
+		_soak_shot = 0.0
+		preview_shots += 1
+		var p := plane.global_position
+		var finite := is_finite(p.x) and is_finite(p.y) and is_finite(p.z)
+		var visible_enemies := 0
+		for e in battle.enemies:
+			if e.is_visible_in_tree():
+				visible_enemies += 1
+		var deb := 0
+		var shells := 0
+		for n in battle.get_children():
+			if n is Debris:
+				deb += 1
+		print("  breakdown: fx=%d debris=%d marks=%d enemies=%d" % [Fx.live, deb, Fx._marks.size(), battle.enemies.size()])
+		print("SOAK t=%d mission=%d mode=%s plane=%s finite=%s state=%d visible=%s enemies=%d/%d friends=%d shots=%d nodes=%d objects_drawn=%d fps=%d" % [int(Time.get_ticks_msec() / 1000), c.index, c.mode, p, finite, plane.state, plane.visible and plane.model.root.visible, visible_enemies, battle.enemies.size(), battle.friends.size(), battle.shots.size(), get_tree().get_node_count(), RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME), Engine.get_frames_per_second()])
+		_capture("soak_%02d" % preview_shots, preview_shots >= 36 or battle.phase == Battle.Phase.RESULTS)
+	return out
 
 
 ## SAQR_PREVIEW=m1..m8: jump into a mission over a plain floor and fly the

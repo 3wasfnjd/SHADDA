@@ -133,7 +133,7 @@ func step(delta: float, world: Node3D) -> void:
 		velocity = heading * speed
 		_trail_timer -= delta
 		if _trail_timer <= 0.0:
-			_trail_timer = 0.035
+			_trail_timer = 0.06
 			Fx.smoke(world, global_position - velocity.normalized() * 0.03, 0.009 if kind == "rocket" else 0.013)
 	if gravity > 0.0:
 		velocity += Vector3(0, -gravity, 0) * delta

@@ -590,6 +590,49 @@ func _begin_wave(i: int) -> void:
 
 func _process(delta: float) -> void:
 	_phase_t += delta
+	_warm_debris()
+	_watch_frame_rate(delta)
+
+
+## Cut each plane type into its crash pieces while the menu is up, one per
+## frame, so a shoot-down never stalls the headset mid-fight.
+var _warm_queue: Array = ["fighter", "ace", "diver", "cargo", "transport", "bomber"]
+func _warm_debris() -> void:
+	if _warm_queue.is_empty() or phase == Phase.PLAYING:
+		return
+	var k: String = _warm_queue.pop_front()
+	var m: Dictionary
+	match k:
+		"fighter": m = Models.fighter(Models.ENEMY, 0.002)
+		"ace": m = Models.fighter(Models.ACE, 0.002)
+		"diver": m = Models.fighter(Models.DIVER, 0.002)
+		"cargo": m = Models.transport(Models.FRIEND)
+		"transport": m = Models.transport()
+		"bomber": m = Models.bomber()
+	var r: Node3D = m.root
+	add_child(r)
+	r.global_position = Vector3(0, -50, 0)
+	Debris.pieces_of(r, k)
+	r.queue_free()
+
+
+## If the headset can't keep up, thin out the effects automatically.
+var _slow_t: float = 0.0
+func _watch_frame_rate(delta: float) -> void:
+	if phase != Phase.PLAYING or paused:
+		return
+	var target := float(Engine.physics_ticks_per_second)
+	var vp := get_viewport()
+	if vp and vp.use_xr:
+		var xri := XRServer.primary_interface as OpenXRInterface
+		if xri:
+			target = xri.display_refresh_rate if xri.display_refresh_rate > 0.0 else target
+	var fps := Engine.get_frames_per_second()
+	_slow_t = _slow_t + delta if fps > 0 and fps < target * 0.8 else maxf(0.0, _slow_t - delta * 0.5)
+	if _slow_t > 2.0:
+		_slow_t = 0.0
+		Fx.budget = maxi(40, int(Fx.budget * 0.7))
+		Debris.effects_high = false
 
 
 func _physics_process(delta: float) -> void:
@@ -787,7 +830,7 @@ func damage_friend(e: Enemy, amount: float, at: Vector3) -> void:
 		cue("boom_big", e.hit_center(), 3.0)
 		Fx.mark(self, Vector3(at.x, surface_below(at), at.z), Vector3.UP, 0.35)
 		if e.kind == "cargo":
-			Debris.from_model(self, e.parts.root, e.velocity * 0.4, e.hit_center())
+			Debris.from_model(self, e.parts.root, e.velocity * 0.4, e.hit_center(), "cargo")
 			friends.erase(e)
 			e.queue_free()
 		else:
@@ -1222,11 +1265,11 @@ func _explode(e: Enemy) -> void:
 			Fx.explosion(self, at, 0.1)
 			Fx.mark(self, Vector3(at.x, surface_below(at), at.z), Vector3.UP, 0.25)
 			cue("boom_big", at)
-			Debris.from_model(self, e.parts.root, e.velocity * 0.4, at)
+			Debris.from_model(self, e.parts.root, e.velocity * 0.4, at, e.kind)
 		"bomber":
 			for i in range(5):
 				Fx.explosion(self, at + Vector3(_rng.randf_range(-0.3, 0.3), _rng.randf_range(-0.08, 0.08), _rng.randf_range(-0.3, 0.3)), 0.12)
-			Debris.from_model(self, e.parts.root, e.velocity * 0.3, at)
+			Debris.from_model(self, e.parts.root, e.velocity * 0.3, at, "bomber")
 			Fx.explosion(self, at, 0.25)
 			cue("boom_big", at, 6.0)
 			shake(1.0)

@@ -7,7 +7,7 @@ extends Node3D
 ## per model kind); small parts go whole to the piece they sit in.
 
 const BUCKETS := ["nose", "body", "lwing", "rwing", "tail"]
-const MAX_ALIVE := 40
+const MAX_ALIVE := 14
 const GRAVITY := 3.2           # the cartoon world is small — fall a bit slower
 static var _cache: Dictionary = {}
 static var _alive: Array = []
@@ -16,7 +16,7 @@ static var effects_high: bool = true
 var vel: Vector3 = Vector3.ZERO
 var spin: Vector3 = Vector3.ZERO
 var life: float = 0.0
-var max_life: float = 9.0
+var max_life: float = 6.0
 var burning: float = 0.0
 var resting: bool = false
 var world: Node3D
@@ -227,8 +227,8 @@ func _process(delta: float) -> void:
 	_smoke_t -= delta
 	if _smoke_t <= 0.0 and world:
 		var flying := not resting
-		if burning > 0.0 or flying:
-			_smoke_t = (0.05 if flying else 0.18) * (1.0 if effects_high else 2.0)
+		if (burning > 0.0 or flying) and not Fx.over_budget():
+			_smoke_t = (0.09 if flying else 0.3) * (1.0 if effects_high else 2.0)
 			if burning > 0.0 and randf() < 0.6:
 				Fx.flame(world, global_position, _half * 0.6)
 			Fx.smoke(world, global_position, _half * 0.5, true)

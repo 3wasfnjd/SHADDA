@@ -60,6 +60,9 @@ func _run() -> void:
 	plane = PlayerPlane.new()
 	battle.add_child(plane)
 	battle.save_path = "user://saqr_test.json"
+	Profile.path = "user://saqr_profile_roomwar_test.json"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(Profile.path))
+	Profile.load_profile()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(battle.save_path))
 	battle.build(head, plane, hud)
 	var room_desc: Dictionary = load("res://systems/app_bootstrap.gd").PREVIEW_ROOM.duplicate(true)

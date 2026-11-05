@@ -105,7 +105,7 @@ const S := {
 	"balanced": ["متوازنة", "Balanced"],
 	"high": ["عالية", "High"],
 	"ultra": ["فائقة", "Ultra"],
-	"quality_d": ["فائقة: دقة أعلى وتنعيم 4× — تستهلك بطارية أكثر", "Ultra: supersampling and 4× MSAA — uses more battery"],
+	"quality_d": ["فائقة: تنعيم 4× — تستهلك بطارية وأداء أكثر", "Ultra: 4× MSAA — uses more battery and GPU"],
 	"refresh": ["معدل التحديث", "Refresh rate"],
 	"effects": ["المؤثرات", "Effects"],
 	"medium": ["متوسطة", "Medium"],
