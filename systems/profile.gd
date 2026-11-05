@@ -3,7 +3,7 @@ extends RefCounted
 ## Everything that survives a restart: the player's settings and their
 ## campaign progress (stars, best scores, coins, hangar). One JSON file.
 
-const VERSION := 1
+const VERSION := 2
 static var path: String = "user://saqr_profile.json"
 
 const DEFAULT_SETTINGS := {
@@ -62,6 +62,10 @@ static func load_profile() -> void:
 	if not parsed is Dictionary:
 		return
 	var s = parsed.get("settings", {})
+	if s is Dictionary and int(parsed.get("version", 1)) < 2:
+		# v1.0.1 and older: start the display settings fresh.
+		for k in ["quality", "refresh", "effects"]:
+			s.erase(k)
 	if s is Dictionary:
 		for k in s:
 			if DEFAULT_SETTINGS.has(k) and typeof(s[k]) in [TYPE_FLOAT, TYPE_INT, TYPE_BOOL, TYPE_STRING]:

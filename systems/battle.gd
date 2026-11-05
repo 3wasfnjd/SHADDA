@@ -590,30 +590,7 @@ func _begin_wave(i: int) -> void:
 
 func _process(delta: float) -> void:
 	_phase_t += delta
-	_warm_debris()
 	_watch_frame_rate(delta)
-
-
-## Cut each plane type into its crash pieces while the menu is up, one per
-## frame, so a shoot-down never stalls the headset mid-fight.
-var _warm_queue: Array = ["fighter", "ace", "diver", "cargo", "transport", "bomber"]
-func _warm_debris() -> void:
-	if _warm_queue.is_empty() or phase == Phase.PLAYING:
-		return
-	var k: String = _warm_queue.pop_front()
-	var m: Dictionary
-	match k:
-		"fighter": m = Models.fighter(Models.ENEMY, 0.002)
-		"ace": m = Models.fighter(Models.ACE, 0.002)
-		"diver": m = Models.fighter(Models.DIVER, 0.002)
-		"cargo": m = Models.transport(Models.FRIEND)
-		"transport": m = Models.transport()
-		"bomber": m = Models.bomber()
-	var r: Node3D = m.root
-	add_child(r)
-	r.global_position = Vector3(0, -50, 0)
-	Debris.pieces_of(r, k)
-	r.queue_free()
 
 
 ## If the headset can't keep up, thin out the effects automatically.

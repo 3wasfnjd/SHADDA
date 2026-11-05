@@ -99,20 +99,10 @@ static func pieces_of(root: Node3D, key: String) -> Array:
 		var mi: MeshInstance3D = pair[0]
 		var xf: Transform3D = pair[1]
 		var mat: Material = mi.get_meta("orig") if mi.has_meta("orig") else mi.material_override
-		var tris := 0
-		if mi.mesh is ArrayMesh and mi.mesh.get_surface_count() > 0:
-			var ia = mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX]
-			tris = ((ia as PackedInt32Array).size() if ia != null else (mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()) / 3
 		var pre: Dictionary = mi.get_meta("debris_parts", {})
 		if not pre.is_empty():
 			for b in pre:
 				(groups[b] as Array).append([pre[b], mat, xf])
-		elif tris > 400:
-			var cut := cut_mesh(mi.mesh, xf, box)
-			for b in cut:
-				for item in cut[b]:
-					var m2: Material = mat if mat else mi.mesh.surface_get_material(item.surface)
-					(groups[b] as Array).append([item.mesh, m2, Transform3D.IDENTITY])
 		else:
 			var c: Vector3 = xf * mi.mesh.get_aabb().get_center()
 			(groups[bucket_of(c, box)] as Array).append([mi.mesh, mat, xf])
@@ -138,8 +128,10 @@ static func from_model(w: Node3D, root: Node3D, velocity: Vector3, at: Vector3, 
 	if root == null or not is_instance_valid(root) or not root.is_inside_tree():
 		burst(w, at, velocity, [Color(0.4, 0.42, 0.38), Color(0.25, 0.25, 0.27)], 8)
 		return
-	var k := key if key != "" else ("model:" + root.name + ":" + str(root.get_child_count()))
-	var pieces := pieces_of(root, k)
+	if key != "player":
+		plane_parts(w, root.global_transform, velocity, key)
+		return
+	var pieces := pieces_of(root, key)
 	var xf := root.global_transform
 	for p in pieces:
 		var d := Debris.new()
@@ -159,6 +151,59 @@ static func from_model(w: Node3D, root: Node3D, velocity: Vector3, at: Vector3, 
 		d.spin = Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * randf_range(4.0, 9.0)
 		d._half = maxf(0.01, float(p.half) * 0.5)
 		d.burning = randf_range(1.5, 4.0) if p.name in ["body", "nose"] or randf() < 0.5 else 0.0
+		_track(d)
+
+
+## Enemy planes: cartoon parts built on the spot (wings, fuselage, tail,
+## propeller) in the plane's colours. Nothing is read back from the GPU, so
+## a shoot-down costs the headset almost nothing.
+const PART_COLORS := {
+	"fighter": [Color(0.40, 0.46, 0.38), Color(0.16, 0.16, 0.17)],
+	"ace": [Color(0.78, 0.1, 0.12), Color(0.1, 0.1, 0.1)],
+	"diver": [Color(0.22, 0.3, 0.45), Color(0.95, 0.95, 0.92)],
+	"cargo": [Color(0.86, 0.84, 0.76), Color(0.86, 0.14, 0.10)],
+	"transport": [Color(0.58, 0.52, 0.38), Color(0.16, 0.16, 0.17)],
+	"bomber": [Color(0.33, 0.37, 0.44), Color(0.16, 0.16, 0.17)],
+}
+static func plane_parts(w: Node3D, xf: Transform3D, velocity: Vector3, kind: String) -> void:
+	var cols: Array = PART_COLORS.get(kind, PART_COLORS.fighter)
+	var k: float = {"bomber": 2.2, "transport": 1.5, "cargo": 1.5}.get(kind, 1.0)
+	var body := Toon.mat(cols[0], 0.4, 0.0015)
+	var trim := Toon.mat(cols[1], 0.4, 0.0015)
+	var wing := PackedVector2Array([Vector2(0.0, -0.03), Vector2(0.13, -0.02), Vector2(0.14, 0.0), Vector2(0.13, 0.018), Vector2(0.0, 0.025)])
+	var specs := [
+		# name, local offset, builder
+		["lwing", Vector3(-0.08, 0, 0)],
+		["rwing", Vector3(0.08, 0, 0)],
+		["body", Vector3(0, 0, 0.0)],
+		["tail", Vector3(0, 0.02, 0.12)],
+		["nose", Vector3(0, 0, -0.12)],
+	]
+	for sp in specs:
+		var d := Debris.new()
+		d.world = w
+		w.add_child(d)
+		var off: Vector3 = sp[1] * k
+		d.global_transform = xf * Transform3D(Basis.IDENTITY, off)
+		d.scale = Vector3.ONE * k * xf.basis.get_scale().x
+		match sp[0]:
+			"lwing":
+				Toon.add(d, Toon.slab(Toon.mirror_x(wing), 0.008), body, Vector3(0.05, 0, 0))
+			"rwing":
+				Toon.add(d, Toon.slab(wing, 0.008), body, Vector3(-0.05, 0, 0))
+			"body":
+				Toon.add(d, Toon.capsule(0.022, 0.14, 10), body, Vector3.ZERO, Vector3(90, 0, 0))
+			"tail":
+				Toon.add(d, Toon.slab(PackedVector2Array([Vector2(-0.05, 0.0), Vector2(0.05, 0.0), Vector2(0.04, 0.03), Vector2(-0.04, 0.03)]), 0.006), body)
+				Toon.add(d, Toon.block(Vector3(0.004, 0.035, 0.03)), trim, Vector3(0, 0.017, 0.012))
+			"nose":
+				Toon.add(d, Toon.can(0.02, 0.024, 0.03, 10), trim, Vector3.ZERO, Vector3(90, 0, 0))
+				Toon.add(d, Toon.block(Vector3(0.09, 0.008, 0.003)), Toon.mat(Color(0.2, 0.2, 0.22), 0.4, 0.0), Vector3(0, 0, -0.018), Vector3(0, 0, randf() * 180.0))
+		var out_dir := (xf.basis * off).normalized() if off.length() > 0.001 else Vector3.UP
+		d.vel = velocity + out_dir * randf_range(0.5, 1.0) + Vector3(0, randf_range(0.4, 1.0), 0)
+		d.spin = Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * randf_range(4.0, 9.0)
+		d._half = 0.03 * k
+		d.burning = randf_range(1.0, 3.0) if sp[0] in ["body", "nose"] else 0.0
 		_track(d)
 
 

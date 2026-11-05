@@ -164,8 +164,12 @@ func apply_settings() -> void:
 	var q := str(Profile.get_s("quality"))
 	var vp := get_viewport()
 	# Kept conservative for the headset: 4× MSAA only on Ultra, native resolution.
-	vp.msaa_3d = Viewport.MSAA_4X if q == "ultra" else Viewport.MSAA_2X
-	vp.scaling_3d_scale = 1.0
+	# Same safe path as v0.6 (which ran on the headset): project MSAA, native
+	# resolution, runtime foveation left to the system. Ultra only adds 4× MSAA.
+	if q == "ultra":
+		vp.msaa_3d = Viewport.MSAA_4X
+	elif vp.msaa_3d != Viewport.MSAA_2X:
+		vp.msaa_3d = Viewport.MSAA_2X
 	Debris.effects_high = str(Profile.get_s("effects")) == "high"
 	Fx.budget = 60 if Debris.effects_high else 35
 	if plane:
@@ -179,13 +183,6 @@ func apply_settings() -> void:
 			want = 90.0 if rates.has(90.0) else (72.0 if rates.has(72.0) else 0.0)
 		if want > 0.0:
 			xr.display_refresh_rate = want
-		# Fixed foveation: stronger on Balanced, gentle on Ultra; dynamic on all.
-		if "foveation_level" in xr:
-			xr.foveation_level = {"balanced": 3, "high": 2, "ultra": 1}.get(q, 2)
-		if xr.has_method("set_cpu_level"):
-			var lvl := OpenXRInterface.PERF_SETTINGS_LEVEL_SUSTAINED_HIGH if q != "balanced" else OpenXRInterface.PERF_SETTINGS_LEVEL_SUSTAINED_LOW
-			xr.set_cpu_level(lvl)
-			xr.set_gpu_level(lvl)
 	if menus and menus.is_open() and menus.panel.rtl != (Lang.code() == "ar"):
 		menus.refresh()
 
