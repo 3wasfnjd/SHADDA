@@ -125,11 +125,14 @@ func _run() -> void:
 	b.rise_from(Vector3(-0.3, 0.0, -0.9))
 	var bid := b.get_instance_id()
 	assert(await _until(func(): return b.state == Enemy.State.ACTIVE, 72 * 4))
+	# Line up a pass from 1.6 m out, then hold the trigger.
+	var bc := b.hit_center()
+	plane.flight = {"pos": bc + Vector3(0, 0, 1.6), "basis": Basis.looking_at(Vector3.FORWARD, Vector3.UP), "speed": 1.0, "sink": 0.0, "ground": false}
 	tr = 1.0
 	assert(await _until(func():
 		if not _gone(bid):
 			aim_at = (instance_from_id(bid) as Enemy).hit_center()
-		return _gone(bid), 72 * 25), "guns popped the balloon")
+		return _gone(bid), 72 * 60), "guns popped the balloon")
 	tr = 0.0
 	assert(battle.score >= 50)
 

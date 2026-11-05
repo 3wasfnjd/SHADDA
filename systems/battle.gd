@@ -80,6 +80,7 @@ func build(player_head: Node3D, player_plane: PlayerPlane, wrist: Hud) -> void:
 
 func on_room_ready(description: Dictionary) -> void:
 	free_flight = bool(description.get("free", false))
+	plane.invincible = free_flight
 	var physics: bool = bool(description.get("found", false)) and not bool(description.get("preview", false))
 	room.setup(description, head_position(), physics)
 	# Park the plane on the floor ahead of the player, nose away from them.
@@ -318,6 +319,9 @@ func _physics_process(delta: float) -> void:
 			else:
 				_finish(false)
 		return
+	if free_flight:
+		_practice(delta)
+		return
 	if not _waves_started:
 		return
 	if in_break:
@@ -333,6 +337,28 @@ func _physics_process(delta: float) -> void:
 			_spawn_t = 0.35 if k == "balloon" else _rng.randf_range(1.6, 2.6)
 	if _queue.is_empty() and _alive_count() == 0 and crates.is_empty() and _phase_t > 1.0:
 		_wave_cleared()
+
+
+## Free flight: two enemy fighters to chase and dogfight; a new one flies in
+## a moment after each kill. They shoot back for show only.
+var _practice_t: float = 1.5
+func _practice(delta: float) -> void:
+	if not plane.airborne() and enemies.is_empty():
+		return
+	_practice_t -= delta
+	if _practice_t <= 0.0 and _alive_count() < 2:
+		_practice_t = 2.0
+		var a := _rng.randf() * TAU
+		var hp := head_position()
+		var at := Vector3(hp.x + cos(a) * 4.5, floor_y + _rng.randf_range(1.2, 2.0), hp.z + sin(a) * 4.5)
+		var n := (Vector3(hp.x, at.y, hp.z) - at).normalized()
+		var e := Enemy.create("fighter")
+		e.battle = self
+		e.practice = true
+		add_child(e)
+		enemies.append(e)
+		e.enter_through({"center": at + n * 0.55, "base": Vector3(at.x, floor_y, at.z), "normal": n, "width": 1.0, "height": 1.0})
+		cue("plane_in", at)
 
 
 func _alive_count() -> int:
@@ -602,7 +628,7 @@ func _resolve_hostile(s: Shot, a: Vector3, b: Vector3) -> void:
 
 
 func _hurt_plane(amount: float, at: Vector3) -> void:
-	if not plane.alive():
+	if not plane.alive() or plane.invincible:
 		return
 	plane.take_hit(amount)
 	cue("player_hit", at, -2.0)

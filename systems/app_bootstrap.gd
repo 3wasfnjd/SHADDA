@@ -200,7 +200,7 @@ func _free_flight_room() -> Dictionary:
 	var floor_y := 0.0
 	if head.global_position.y < 0.6:
 		floor_y = head.global_position.y - 1.6
-	return {"floor_y": floor_y, "ceiling_y": floor_y + 3.0, "walls": [], "openings": [], "surfaces": [], "blocks": [], "found": false, "free": true}
+	return {"floor_y": floor_y, "ceiling_y": floor_y + 5.0, "walls": [], "openings": [], "surfaces": [], "blocks": [], "found": false, "free": true}
 
 
 # --- desktop preview -------------------------------------------------------------------------

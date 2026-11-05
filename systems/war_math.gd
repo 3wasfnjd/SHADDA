@@ -13,11 +13,13 @@ const BOOST_THRUST := 1.4
 const DRAG := 1.25              # top speed ≈ sqrt(THRUST/DRAG) ≈ 1.26 m/s
 const STALL := 0.5              # below this the wings stop lifting
 const LIFTOFF := 0.7            # rolling speed needed to pull up off the ground
-const PITCH_RATE := 1.7         # rad/s at full stick
-const ROLL_RATE := 3.0
+const PITCH_RATE := 1.25        # rad/s at full stick (gentle, smooth)
+const ROLL_RATE := 2.2
+const GLIDE_SPEED := 0.42       # in the air it never slows below this: it glides
+const MAX_SINK := 0.28          # slowest flight sinks gently, never drops
 const YAW_RATE := 0.9
 const BANK_TURN := 2.2          # turn rate per unit sin(bank)
-const SAFE_SINK := 0.8          # touchdown faster than this (m/s down) is a crash
+const SAFE_SINK := 1.0          # touchdown faster than this (m/s down) is a crash
 const GROUND_FRICTION := 0.5
 const BRAKE := 1.6
 const PLANE_HP := 100.0
@@ -177,12 +179,14 @@ static func rc_fly(st: Dictionary, inp: Dictionary, delta: float, ground_y: floa
 		var fwd2 := -b.z
 		speed += (thrust - DRAG * speed * speed - GRAVITY * fwd2.y * 0.35) * delta
 		speed = maxf(0.0, speed)
+		speed = maxf(speed, GLIDE_SPEED)
 		if speed < STALL:
-			# Stall: the plane sinks and the nose drops.
+			# Too slow: the wings lift less and it sinks — gently, capped,
+			# with the nose easing toward level instead of dropping.
 			var deficit := 1.0 - speed / STALL
-			sink += GRAVITY * 0.45 * deficit * delta
-			var level := Basis.looking_at(Vector3(fwd2.x, -0.9, fwd2.z).normalized(), Vector3.UP)
-			b = b.slerp(level, minf(1.0, deficit * 0.9 * delta)).orthonormalized()
+			sink = minf(MAX_SINK, sink + 1.2 * deficit * delta)
+			var level := Basis.looking_at(Vector3(fwd2.x, minf(fwd2.y, 0.0) * 0.5, fwd2.z).normalized(), Vector3.UP)
+			b = b.slerp(level, minf(1.0, 0.6 * delta)).orthonormalized()
 		else:
 			sink = move_toward(sink, 0.0, 3.0 * delta)
 		pos += fwd2 * speed * delta + Vector3(0, -sink, 0) * delta

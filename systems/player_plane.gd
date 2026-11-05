@@ -25,6 +25,8 @@ var boost: float = 1.0
 var boosting: bool = false
 var throttle: float = 0.0
 var stalling: bool = false
+var invincible: bool = false       # free flight: nothing can hurt the plane
+var _sm := {"pitch": 0.0, "roll": 0.0, "yaw": 0.0}
 var locks: Array = []
 var hit_flash: float = 0.0
 var velocity: Vector3 = Vector3.ZERO
@@ -168,7 +170,13 @@ func _fly(delta: float, inp: Dictionary) -> void:
 	_rpm = move_toward(_rpm, 0.25 + throttle * 0.75 + (0.3 if boosting else 0.0), delta * 2.0)
 	var under: float = battle.surface_below(flight.pos + Vector3(0, 0.05, 0)) if battle else 0.0
 	var before: Vector3 = flight.pos
-	var step := {"pitch": inp.get("pitch", 0.0), "roll": inp.get("roll", 0.0), "yaw": inp.get("yaw", 0.0), "throttle": throttle, "boost": boosting, "brake": inp.get("brake", false)}
+	# Smooth, progressive sticks: a soft curve near the centre for fine
+	# corrections and a short ease so the plane never jerks.
+	for k in ["pitch", "roll", "yaw"]:
+		var raw := clampf(float(inp.get(k, 0.0)), -1.0, 1.0)
+		var curved := raw * (0.35 + 0.65 * absf(raw))
+		_sm[k] = move_toward(_sm[k], curved, delta * 5.0)
+	var step := {"pitch": _sm.pitch, "roll": _sm.roll, "yaw": _sm.yaw, "throttle": throttle, "boost": boosting, "brake": inp.get("brake", false)}
 	if _roll_t >= 0.0:
 		step.roll = 0.0
 	var was_ground: bool = flight.ground
@@ -443,7 +451,7 @@ func rolling() -> bool:
 
 
 func take_hit(amount: float, crash: bool = false) -> void:
-	if not alive():
+	if not alive() or invincible:
 		return
 	if rolling() and not crash:
 		amount *= 0.2

@@ -20,6 +20,7 @@ var hit_flash: float = 0.0
 var entry: Dictionary = {}          # the opening it came through {center, normal, ...}
 var anchor: Vector3 = Vector3.ZERO  # balloons: cable anchor on a surface
 var drops: Array = []               # transport: points to drop crates over
+var practice: bool = false          # free-flight sparring partner: evades when chased
 var _mode: String = "attack"
 var _mode_t: float = 0.0
 var _goal: Vector3 = Vector3.ZERO
@@ -285,6 +286,9 @@ func _tick_fighter(delta: float) -> void:
 	if state == State.ENTER:
 		_entering(delta, 1.3)
 		return
+	if practice:
+		_tick_sparring(delta)
+		return
 	var jet: Vector3 = battle.player_position()
 	var to: Vector3 = jet - (flight.pos as Vector3)
 	_mode_t -= delta
@@ -314,6 +318,56 @@ func _tick_fighter(delta: float) -> void:
 	elif _fire_t <= 0.0 and _mode == "attack" and flight.fwd.dot(to.normalized()) > 0.94 and to.length() < 2.4:
 		_burst = 6
 		_fire_t = _rng.randf_range(1.6, 2.6)
+		battle.cue("enemy_gun", global_position, -6.0)
+
+
+## Sparring fighter: wanders near the player, breaks hard left/right/up/down
+## when the player gets on its tail, and now and then turns to joust.
+func _tick_sparring(delta: float) -> void:
+	var me: Vector3 = flight.pos
+	var you: Vector3 = battle.player_position()
+	var to_you := you - me
+	var fwd: Vector3 = flight.fwd
+	var chased := to_you.length() < 3.0 and fwd.dot(to_you.normalized()) < -0.3
+	var head: Vector3 = battle.head_position()
+	_mode_t -= delta
+	if chased and _mode != "evade":
+		_mode = "evade"
+		_mode_t = _rng.randf_range(1.0, 1.6)
+		var side := fwd.cross(Vector3.UP).normalized() * (1.0 if _rng.randf() < 0.5 else -1.0)
+		_goal = me + side * 2.0 + fwd * 1.0 + Vector3(0, _rng.randf_range(-0.6, 0.8), 0)
+	elif _mode_t <= 0.0:
+		if _rng.randf() < 0.35:
+			_mode = "attack"
+			_mode_t = _rng.randf_range(2.0, 3.0)
+		else:
+			_mode = "wander"
+			_mode_t = _rng.randf_range(2.0, 3.5)
+			var a := _rng.randf() * TAU
+			_goal = head + Vector3(cos(a), 0, sin(a)) * _rng.randf_range(1.5, 4.0)
+	if _mode == "attack":
+		_goal = you + battle.player_velocity() * 0.4
+	# Stay in sight: no further than ~5 m from the player's head.
+	_goal.y = clampf(_goal.y, battle.floor_y + 0.7, battle.floor_y + 2.6)
+	var off := Vector2(_goal.x - head.x, _goal.z - head.z)
+	if off.length() > 4.5:
+		off = off.normalized() * 4.5
+		_goal = Vector3(head.x + off.x, _goal.y, head.z + off.y)
+	var spd := 1.15 if _mode == "evade" else 0.95
+	flight = WarMath.fly(flight, _goal, spd, delta, battle.box, 2.4 if _mode == "evade" else 1.9)
+	_pose_from_flight()
+	_fire_t -= delta
+	if _burst > 0:
+		_burst_t -= delta
+		if _burst_t <= 0.0:
+			_burst_t = 0.09
+			_burst -= 1
+			var m: Node3D = parts.muzzles[_burst % parts.muzzles.size()]
+			battle.enemy_fire("ebullet", m.global_position, -global_basis.z, velocity)
+			Fx.muzzle(battle, m.global_position, -global_basis.z, 0.014)
+	elif _fire_t <= 0.0 and _mode == "attack" and fwd.dot(to_you.normalized()) > 0.95 and to_you.length() < 2.5:
+		_burst = 5
+		_fire_t = _rng.randf_range(2.0, 3.0)
 		battle.cue("enemy_gun", global_position, -6.0)
 
 

@@ -82,9 +82,13 @@ func _initialize() -> void:
 	# No throttle: it slows, stalls and sinks.
 	var st2 := {"pos": Vector3(0, 1.5, 0), "basis": Basis.looking_at(Vector3.FORWARD, Vector3.UP), "speed": 0.8, "sink": 0.0, "ground": false}
 	var cut := {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0, "boost": false, "brake": false}
-	for i in range(72 * 2):
+	var drop := 0.0
+	for i in range(72 * 5):
+		var y0: float = st2.pos.y
 		st2 = WarMath.rc_fly(st2, cut, 1.0 / 72.0, 0.0, 0.06)
-	assert(st2.speed < WarMath.STALL and st2.pos.y < 1.3, "stalls and sinks without power")
+		drop = maxf(drop, (y0 - float(st2.pos.y)) * 72.0)
+	assert(st2.speed >= WarMath.GLIDE_SPEED - 1e-4 and st2.pos.y < 1.45, "without power it slows to a glide and sinks (y=%f)" % st2.pos.y)
+	assert(drop < 0.45, "sinks gently, never drops (%f m/s)" % drop)
 	# On the ground with the throttle closed it does not move; full throttle + pull = liftoff.
 	var g := {"pos": Vector3(0, 0.06, 0), "basis": Basis.looking_at(Vector3.FORWARD, Vector3.UP), "speed": 0.0, "sink": 0.0, "ground": true}
 	g = WarMath.rc_fly(g, cut, 0.5, 0.0, 0.06)
@@ -114,7 +118,7 @@ func _initialize() -> void:
 			ev = hard.event
 			break
 	assert(ev == "crash", "steep dive into the floor crashes (%s)" % ev)
-	print("PASS: war math (hand flight: bank-to-turn, wing leveller, stall, idle on ground, takeoff, soft landing, crash; enemy flight stays in the room, reaches the steer point, banks, climbs cost speed; hits; ballistics; walls with openings)")
+	print("PASS: war math (hand flight: bank-to-turn, wing leveller, gentle glide when slow, idle on ground, takeoff, soft landing, crash; enemy flight stays in the room, reaches the steer point, banks, climbs cost speed; hits; ballistics; walls with openings)")
 	quit(0)
 
 var _elapsed := 0.0
