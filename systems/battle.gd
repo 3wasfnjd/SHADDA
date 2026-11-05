@@ -27,6 +27,7 @@ var score: int = 0
 var streak: int = 0
 var won: bool = false
 var auto_spawn: bool = true
+var free_flight: bool = false     # no enemies: practise takeoff, flying and landing
 var hands: Array = []            # XRControllers for rumble (optional)
 var aim_origin: Vector3 = Vector3.ZERO
 var aim_dir: Vector3 = Vector3.FORWARD
@@ -37,6 +38,7 @@ var _break_t: float = 0.0
 var _combo_t: float = 0.0
 var _end_t: float = -1.0
 var _waves_started: bool = false
+var _respawn: bool = false
 var _ui_root: Node3D
 var _buttons: Array = []
 var _trigger_was: float = 0.0
@@ -77,6 +79,7 @@ func build(player_head: Node3D, player_plane: PlayerPlane, wrist: Hud) -> void:
 
 
 func on_room_ready(description: Dictionary) -> void:
+	free_flight = bool(description.get("free", false))
 	var physics: bool = bool(description.get("found", false)) and not bool(description.get("preview", false))
 	room.setup(description, head_position(), physics)
 	# Park the plane on the floor ahead of the player, nose away from them.
@@ -243,7 +246,7 @@ func start_match() -> void:
 
 
 func on_airborne() -> void:
-	if phase == Phase.PLAYING and not _waves_started:
+	if phase == Phase.PLAYING and not _waves_started and not free_flight:
 		_waves_started = true
 		_begin_wave(0)
 
@@ -251,6 +254,7 @@ func on_airborne() -> void:
 func on_plane_destroyed() -> void:
 	if phase == Phase.PLAYING:
 		_end_t = 2.5
+		_respawn = free_flight
 
 
 func _begin_wave(i: int) -> void:
@@ -304,7 +308,15 @@ func _physics_process(delta: float) -> void:
 	if _end_t >= 0.0:
 		_end_t -= delta
 		if _end_t <= 0.0:
-			_finish(false)
+			if _respawn:
+				# Free flight: a fresh plane back on the floor in front of you.
+				_end_t = -1.0
+				_respawn = false
+				Fx.clear_marks()
+				plane.park(park_spot, park_heading, park_spot.y)
+				plane.start_engine()
+			else:
+				_finish(false)
 		return
 	if not _waves_started:
 		return

@@ -32,6 +32,10 @@ func setup(room: Dictionary, head_pos: Vector3, use_physics: bool) -> void:
 	physics_room = use_physics
 	box = WarMath.room_box(walls, floor_y, ceiling_y, head_pos)
 	virtual_openings = false
+	if room.get("free", false):
+		# Free flight: a big open box, no walls, no occluders.
+		box = {"min": Vector3(head_pos.x - 3.5, floor_y, head_pos.z - 3.5), "max": Vector3(head_pos.x + 3.5, ceiling_y, head_pos.z + 3.5)}
+		return
 	if openings.filter(func(o): return o.kind == "window" or o.kind == "door").is_empty():
 		_add_virtual_openings(head_pos)
 	_build_occluders()

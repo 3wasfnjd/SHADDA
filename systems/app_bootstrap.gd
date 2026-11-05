@@ -16,6 +16,11 @@ var plane: PlayerPlane
 var hud: Hud
 var battle: Battle
 var room_scan: RoomScan
+
+## Free flight for tuning takeoff and handling: no room scan, no enemies,
+## a flat floor and a large open box around the player. Set true to bring
+## back the mandatory Space Setup scan and the room war.
+const ROOM_SCAN := false
 var foreground := true
 var positioned := false
 var rendered := false
@@ -137,10 +142,13 @@ func _process(delta: float) -> void:
 		if preview:
 			battle.on_room_ready(PREVIEW_ROOM.duplicate(true))
 		else:
-			room_scan = RoomScan.new()
-			add_child(room_scan)
-			room_scan.room_ready.connect(battle.on_room_ready)
-			room_scan.start(origin, head)
+			if ROOM_SCAN:
+				room_scan = RoomScan.new()
+				add_child(room_scan)
+				room_scan.room_ready.connect(battle.on_room_ready)
+				room_scan.start(origin, head)
+			else:
+				battle.on_room_ready(_free_flight_room())
 	if not started or not ready or battle.phase == Battle.Phase.SCANNING:
 		return
 	var tr := 0.0
@@ -184,6 +192,15 @@ func _stop(message: String) -> void:
 	push_error(message)
 	OS.alert(message, "SAQR")
 	get_tree().quit(1)
+
+
+## Floor from the tracking space (stage origin = floor); if the runtime gave a
+## local space instead, assume the player stands 1.6 m tall.
+func _free_flight_room() -> Dictionary:
+	var floor_y := 0.0
+	if head.global_position.y < 0.6:
+		floor_y = head.global_position.y - 1.6
+	return {"floor_y": floor_y, "ceiling_y": floor_y + 3.0, "walls": [], "openings": [], "surfaces": [], "blocks": [], "found": false, "free": true}
 
 
 # --- desktop preview -------------------------------------------------------------------------
