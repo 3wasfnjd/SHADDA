@@ -1,0 +1,23 @@
+extends SceneTree
+const Clock = preload("res://systems/intro_clock.gd")
+func _initialize() -> void:
+	var c = Clock.new()
+	c.tick(0.4,true)
+	assert(is_equal_approx(c.opacity(),1.0))
+	c.tick(30,false)
+	assert(is_equal_approx(c.elapsed,0.4))
+	c.tick(4.2,true)
+	assert(not c.finished)
+	assert(is_equal_approx(c.opacity(),1.0))
+	c.tick(0.4,true)
+	assert(c.finished and is_zero_approx(c.opacity()))
+	print("PASS: intro 5.0 s, focus pause, fade intervals")
+	quit(0)
+
+var _elapsed := 0.0
+func _process(delta: float) -> bool:
+	_elapsed += delta
+	if _elapsed > 40.0:
+		printerr("FAIL: test timed out (an assert above probably failed)")
+		quit(1)
+	return false
