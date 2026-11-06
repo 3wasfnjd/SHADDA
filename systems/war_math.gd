@@ -242,6 +242,61 @@ static func rc_fly(st: Dictionary, inp: Dictionary, delta: float, ground_y: floa
 	return {"pos": pos, "basis": b, "speed": speed, "sink": sink, "ground": on_ground, "event": event}
 
 
+## Easy flight (default): the sticks set the plane's ATTITUDE, not its rate.
+## Right stick ↑↓ = climb/dive angle (up to ~32°), ←→ = bank (up to ~50°)
+## which turns the plane; let go and it flies straight and level, holding its
+## height. It can't stall, loop or flip, and close to the floor the dive
+## flattens out so it settles on the floor and lands instead of crashing.
+## Still fully hand-flown: nothing moves unless the player steers.
+const EASY_PITCH := 0.56
+const EASY_BANK := 0.88
+const EASY_MIN_SPEED := 0.6
+const EASY_CUSHION := 0.35        # metres above the floor where dives flatten
+
+static func easy_fly(st: Dictionary, inp: Dictionary, delta: float, ground_y: float, gear: float) -> Dictionary:
+	if st.ground:
+		var g := rc_fly(st, inp, delta, ground_y, gear)
+		return g
+	var b: Basis = st.basis
+	var pos: Vector3 = st.pos
+	var speed: float = st.speed
+	var fwd := -b.z
+	var yaw := atan2(-fwd.x, -fwd.z)
+	var pitch := asin(clampf(fwd.y, -1.0, 1.0))
+	var bank := bank_of(b)
+	var want_pitch := float(inp.pitch) * EASY_PITCH
+	var want_bank := float(inp.roll) * EASY_BANK
+	# Floor cushion: near the floor a dive eases to a shallow glide.
+	var h := pos.y - ground_y - gear
+	if h < EASY_CUSHION and want_pitch < 0.0:
+		want_pitch = maxf(want_pitch, lerpf(-0.04, -0.2, clampf(h / EASY_CUSHION, 0.0, 1.0)))
+	pitch = move_toward(pitch, want_pitch, 1.5 * delta)
+	bank = move_toward(bank, want_bank, 2.6 * delta)
+	var thrust: float = (float(inp.throttle) * THRUST + (BOOST_THRUST if inp.boost else 0.0)) * float(inp.get("power", 1.0))
+	yaw += (-sin(bank) * BANK_TURN * 0.95 - float(inp.yaw) * YAW_RATE) * delta
+	b = (Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch) * Basis(Vector3.FORWARD, bank)).orthonormalized()
+	fwd = -b.z
+	speed += (thrust - DRAG * speed * speed - GRAVITY * fwd.y * 0.25) * delta
+	speed = maxf(speed, EASY_MIN_SPEED)
+	pos += fwd * speed * delta
+	var event := ""
+	var on_ground := false
+	if pos.y <= ground_y + gear:
+		var descent := -fwd.y * speed
+		if descent > SAFE_SINK * 1.4 or absf(bank) > 0.95:
+			event = "crash"
+			pos.y = ground_y + gear + 0.02
+			speed *= 0.4
+			b = Basis.looking_at(Vector3(fwd.x, 0.25, fwd.z).normalized(), Vector3.UP)
+		else:
+			event = "landed"
+			on_ground = true
+			pos.y = ground_y + gear
+			var flat := Vector3(fwd.x, 0, fwd.z)
+			b = Basis.looking_at(flat.normalized() if flat.length() > 0.01 else Vector3.FORWARD, Vector3.UP)
+	return {"pos": pos, "basis": b, "speed": speed, "sink": 0.0, "ground": on_ground, "event": event}
+
+
 ## Bank angle (radians, + = right wing down).
 static func bank_of(b: Basis) -> float:
 	var right := b.x
@@ -256,7 +311,7 @@ static func bank_of(b: Basis) -> float:
 
 ## Stick inputs that fly the RC model toward `goal` (used by the tests and the
 ## desktop preview only — in the game the player flies).
-static func autopilot(st: Dictionary, goal: Vector3, throttle: float = 0.9) -> Dictionary:
+static func autopilot(st: Dictionary, goal: Vector3, throttle: float = 0.9, easy: bool = false) -> Dictionary:
 	var b: Basis = st.basis
 	var fwd := -b.z
 	var to: Vector3 = goal - (st.pos as Vector3)
@@ -273,6 +328,10 @@ static func autopilot(st: Dictionary, goal: Vector3, throttle: float = 0.9) -> D
 	var climb := atan2(to.y, maxf(0.2, flat_t.length()))
 	var pitch_now := asin(clampf(fwd.y, -1.0, 1.0))
 	var pitch := clampf((clampf(climb, -0.45, 0.45) - pitch_now) * 3.0, -1.0, 1.0)
+	if easy:
+		# Easy flight takes attitudes, not rates.
+		roll = clampf(want_bank / EASY_BANK, -1.0, 1.0)
+		pitch = clampf(clampf(climb, -0.45, 0.45) / EASY_PITCH, -1.0, 1.0)
 	if st.ground:
 		pitch = 1.0 if st.speed >= LIFTOFF else 0.0
 		roll = clampf(heading_err * 2.0, -1.0, 1.0)

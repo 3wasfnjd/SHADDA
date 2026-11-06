@@ -58,6 +58,7 @@ func _run() -> void:
 	battle = Battle.new()
 	arena.add_child(battle)
 	plane = PlayerPlane.new()
+	plane.easy_flight = false   # the room-war test checks the Pro flight model
 	battle.add_child(plane)
 	battle.save_path = "user://saqr_test.json"
 	Profile.path = "user://saqr_profile_roomwar_test.json"

@@ -26,7 +26,7 @@ func _initialize() -> void:
 func _frame() -> void:
 	var inp := {}
 	if fly:
-		inp = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75)
+		inp = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75, plane.easy_flight)
 	battle.update_controls(DT, head.global_position, Vector3.FORWARD, inp, trig, 0.0)
 	await physics_frame
 

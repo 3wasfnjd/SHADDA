@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS := {
 	"hand": "right",            # which hand holds the flight stick (pitch/roll + guns)
 	"invert": false,            # invert the climb/dive axis
 	"sensitivity": 1.0,         # 0.6 … 1.4
+	"flight": "easy",           # easy: sticks set the attitude · pro: sticks set rates
 	"leveler": true,            # wings level themselves when the stick is let go
 	"aim_assist": true,         # bullets bend slightly toward a target in the sight
 	"haptics": true,

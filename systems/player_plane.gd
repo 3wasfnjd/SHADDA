@@ -44,6 +44,7 @@ var has_flares: bool = false
 var aim_assist: bool = true
 var leveler: bool = true
 var haptics: bool = true
+var easy_flight: bool = true      # Easy (attitude) or Pro (rates) flight
 var damage_taken: float = 0.0
 var _trails: Array = []
 var _dust_t: float = 0.0
@@ -209,13 +210,13 @@ func _fly(delta: float, inp: Dictionary) -> void:
 	# corrections and a short ease so the plane never jerks.
 	for k in ["pitch", "roll", "yaw"]:
 		var raw := clampf(float(inp.get(k, 0.0)), -1.0, 1.0)
-		var curved := raw * (0.35 + 0.65 * absf(raw))
-		_sm[k] = move_toward(_sm[k], curved, delta * 5.0)
+		var curved := raw if easy_flight else raw * (0.35 + 0.65 * absf(raw))
+		_sm[k] = move_toward(_sm[k], curved, delta * (7.0 if easy_flight else 5.0))
 	var step := {"pitch": _sm.pitch, "roll": _sm.roll, "yaw": _sm.yaw, "throttle": throttle, "boost": boosting, "brake": inp.get("brake", false), "power": power, "level": leveler}
 	if _roll_t >= 0.0:
 		step.roll = 0.0
 	var was_ground: bool = flight.ground
-	var r := WarMath.rc_fly(flight, step, delta, under, gear_height)
+	var r := WarMath.easy_fly(flight, step, delta, under, gear_height) if easy_flight else WarMath.rc_fly(flight, step, delta, under, gear_height)
 	# Rolling off a table edge: start falling instead of floating.
 	if was_ground and r.ground:
 		var under_now: float = battle.surface_below(r.pos + Vector3(0, 0.05, 0)) if battle else 0.0
@@ -622,6 +623,7 @@ func apply_loadout() -> void:
 	aim_assist = bool(Profile.get_s("aim_assist"))
 	leveler = bool(Profile.get_s("leveler"))
 	haptics = bool(Profile.get_s("haptics"))
+	easy_flight = str(Profile.get_s("flight")) != "pro"
 	rockets = rocket_max
 	bombs = special_max
 	refresh_stores()

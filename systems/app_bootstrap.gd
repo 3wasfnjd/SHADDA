@@ -176,6 +176,7 @@ func apply_settings() -> void:
 		plane.aim_assist = bool(Profile.get_s("aim_assist"))
 		plane.leveler = bool(Profile.get_s("leveler"))
 		plane.haptics = bool(Profile.get_s("haptics"))
+		plane.easy_flight = str(Profile.get_s("flight")) != "pro"
 	if xr and xr.is_initialized() and not preview:
 		var want := float(int(Profile.get_s("refresh")))
 		var rates := xr.get_available_display_refresh_rates()
@@ -452,7 +453,7 @@ func _preview_input(delta: float) -> Array:
 		var goal := point
 		if plane.flight.ground and preview_t < 2.6:
 			goal = plane.global_position + plane.forward() * 2.0
-		out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6))
+		out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75, plane.easy_flight)
 	# Camera follows the action a little so the shots frame the plane.
 	if battle.phase == Battle.Phase.PLAYING and plane.visible:
 		var want := Basis.looking_at((plane.global_position - head.global_position).normalized(), Vector3.UP)
@@ -547,7 +548,7 @@ func _preview_soak(delta: float) -> Array:
 		if c.id == "escort":
 			c.t = maxf(c.t, Campaign.ESCORT_TIME)
 	out[0] = 1.0 if fmod(preview_t, 1.4) < 0.8 else 0.0
-	out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75)
+	out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75, plane.easy_flight)
 	if plane.airborne() and fmod(preview_t, 5.0) < delta:
 		plane.use_special()
 	# A standing player looking ahead over the battle area.
@@ -608,7 +609,7 @@ func _preview_campaign(delta: float) -> Array:
 					best = d
 					goal = e.hit_center() + (Vector3(0, 0.7, 0) if e.kind in ["tank", "truck", "sam", "soldier", "fuel", "radar", "aa"] else Vector3.ZERO)
 	out[0] = 1.0 if preview_t > 3.0 and fmod(preview_t, 1.4) < 0.8 else 0.0
-	out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75)
+	out[2] = WarMath.autopilot(plane.flight, WarMath.clamp_into(goal, battle.box, 0.6, 0.6), 0.75, plane.easy_flight)
 	if plane.airborne() and preview_mode in ["m3", "m6"]:
 		if fmod(preview_t, 4.0) < delta:
 			plane.use_special()

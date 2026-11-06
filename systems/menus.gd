@@ -352,6 +352,7 @@ func _settings(tab: String) -> void:
 			rows.append(["", "note", Lang.t("diff_%s_d" % str(Profile.get_s("difficulty")))])
 			rows.append([Lang.t("reset_progress"), "reset"])
 		"controls":
+			rows.append([Lang.t("flight_mode"), "choice", "flight", [["easy", Lang.t("easy")], ["pro", Lang.t("pro")]]])
 			rows.append([Lang.t("stick_hand"), "choice", "hand", [["right", Lang.t("right")], ["left", Lang.t("left")]]])
 			rows.append([Lang.t("invert"), "choice", "invert", [[false, Lang.t("off")], [true, Lang.t("on")]]])
 			rows.append([Lang.t("sensitivity"), "slider", "sensitivity", 0.6, 1.4])
@@ -389,7 +390,7 @@ func _settings(tab: String) -> void:
 				var w := p.button(Lang.t("confirm_reset") if _reset_armed else Lang.t("reset_progress"), Vector2(cx, y), Vector2(0.36, 0.062), _reset, "normal", "retry", 42)
 				if _reset_armed:
 					w.color = Panel3D.PRIMARY
-		y -= 0.085
+		y -= 0.085 if rows.size() <= 6 else 0.068
 	var back_to := str(args.get("back", "main"))
 	p.button(Lang.t("back"), Vector2(p.sx(-0.4), -0.325), Vector2(0.18, 0.06), func(): open(back_to, {}, true), "ghost", "back", 44)
 	p.label("SAQR v1.0 · ABODEN GAMES", Vector2(p.sx(0.3), -0.325), 32, Color(Panel3D.DIM, 0.6))

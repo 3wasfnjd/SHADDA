@@ -118,7 +118,44 @@ func _initialize() -> void:
 			ev = hard.event
 			break
 	assert(ev == "crash", "steep dive into the floor crashes (%s)" % ev)
-	print("PASS: war math (hand flight: bank-to-turn, wing leveller, gentle glide when slow, idle on ground, takeoff, soft landing, crash; enemy flight stays in the room, reaches the steer point, banks, climbs cost speed; hits; ballistics; walls with openings)")
+	# Easy flight: sticks set the attitude; let go and it flies level.
+	var es := {"pos": Vector3(0, 1.0, 0), "basis": Basis.IDENTITY, "speed": 1.2, "sink": 0.0, "ground": false}
+	var hands := {"pitch": 0.0, "roll": 1.0, "yaw": 0.0, "throttle": 0.6, "boost": false, "brake": false}
+	for i in range(90):
+		es = WarMath.easy_fly(es, hands, 1.0 / 90.0, 0.0, 0.03)
+	assert(WarMath.bank_of(es.basis) > 0.8 and WarMath.bank_of(es.basis) < WarMath.EASY_BANK + 0.01, "easy: full stick banks to its limit, never past it")
+	var h0: float = (es.basis as Basis).z.x
+	hands.roll = 0.0
+	for i in range(180):
+		es = WarMath.easy_fly(es, hands, 1.0 / 90.0, 0.0, 0.03)
+	assert(absf(WarMath.bank_of(es.basis)) < 0.02 and absf((-(es.basis as Basis).z).y) < 0.02, "easy: hands off → wings level, nose level")
+	var y0: float = es.pos.y
+	for i in range(270):
+		es = WarMath.easy_fly(es, hands, 1.0 / 90.0, 0.0, 0.03)
+	assert(absf(es.pos.y - y0) < 0.03, "easy: holds its height hands-off")
+	hands.throttle = 0.0
+	for i in range(450):
+		es = WarMath.easy_fly(es, hands, 1.0 / 90.0, 0.0, 0.03)
+	assert(es.speed >= WarMath.EASY_MIN_SPEED - 0.001 and es.pos.y > 0.9, "easy: idle throttle can't stall it or make it drop")
+	# Full dive at the floor: the cushion flattens it into a landing.
+	hands.pitch = -1.0
+	hands.throttle = 0.8
+	var eev := ""
+	for i in range(900):
+		es = WarMath.easy_fly(es, hands, 1.0 / 90.0, 0.0, 0.03)
+		if es.event != "":
+			eev = es.event
+			break
+	assert(eev == "landed", "easy: a full dive at the floor ends in a landing, not a crash (%s)" % eev)
+	hands.pitch = 1.0
+	var up := false
+	for i in range(300):
+		es = WarMath.easy_fly(es, hands, 1.0 / 90.0, 0.0, 0.03)
+		if es.event == "liftoff":
+			up = true
+			break
+	assert(up, "easy: throttle + stick up takes off again")
+	print("PASS: war math (hand flight: bank-to-turn, wing leveller, gentle glide when slow, idle on ground, takeoff, soft landing, crash; easy flight: attitude sticks, level hold, no stall, floor cushion landing, takeoff; enemy flight stays in the room, reaches the steer point, banks, climbs cost speed; hits; ballistics; walls with openings)")
 	quit(0)
 
 var _elapsed := 0.0
