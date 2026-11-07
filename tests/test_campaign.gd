@@ -403,6 +403,8 @@ func _run() -> void:
 	assert(absf((hp0 - rd.hp) - full * WarMath.GUN_ARMOR.raider) < 0.01, "armour halves plain bullets (%.2f of %.2f)" % [hp0 - rd.hp, full])
 	rd.flight.pos = plane.global_position - plane.forward() * 1.5
 	rd.flight.fwd = plane.forward()
+	rd.global_position = rd.flight.pos
+	rd.global_basis = Basis.looking_at(plane.forward(), Vector3.UP)
 	rd._rocket_t = 0.0
 	var before_sams := battle.shots.filter(func(sh): return sh.kind == "sam").size()
 	rd._raider_rockets(0.01)
