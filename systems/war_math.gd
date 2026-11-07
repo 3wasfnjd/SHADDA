@@ -71,6 +71,9 @@ const ENEMIES := {
 	"radar":     {"hp": 10.0, "radius": 0.11, "points": 400},
 	"fuel":      {"hp": 4.0,  "radius": 0.09, "points": 250},
 	"diver":     {"hp": 4.0,  "radius": 0.12, "points": 300},
+	"heli":      {"hp": 9.0,  "radius": 0.13, "points": 450},
+	"raider":    {"hp": 9.0,  "radius": 0.13, "points": 500},
+	"gunship":   {"hp": 45.0, "radius": 0.32, "points": 3000},
 	"cargo":     {"hp": 60.0, "radius": 0.17, "points": 0},
 	"hangar":    {"hp": 14.0, "radius": 0.13, "points": 0},
 }
@@ -80,9 +83,17 @@ const GUN_SPECS := {
 	"twin":   {"rate": 1.0,  "damage": 1.0, "per": 2, "spread": 0.006},
 	"quad":   {"rate": 0.85, "damage": 0.7, "per": 4, "spread": 0.014},
 	"cannon": {"rate": 0.32, "damage": 3.2, "per": 1, "spread": 0.003},
+	"minigun": {"rate": 2.4, "damage": 0.6, "per": 2, "spread": 0.02},
 }
-const SPECIAL_CHARGES := {"bombs": 3, "cluster": 3, "mines": 4, "lightning": 3}
-const SPECIAL_RELOAD := {"bombs": 4.0, "cluster": 4.5, "mines": 3.5, "lightning": 7.0}
+# Armoured enemies shrug off part of every plain bullet.
+const GUN_ARMOR := {"raider": 0.5, "gunship": 0.55}
+const SWARM_ROCKETS := 6
+const SWARM_DAMAGE := 0.6        # × a rocket's damage, per mini rocket
+const NAPALM_SECONDS := 5.0
+const NAPALM_RADIUS := 0.3
+const NAPALM_DPS := 2.6
+const SPECIAL_CHARGES := {"bombs": 3, "cluster": 3, "mines": 4, "lightning": 3, "swarm": 3, "napalm": 3}
+const SPECIAL_RELOAD := {"bombs": 4.0, "cluster": 4.5, "mines": 3.5, "lightning": 7.0, "swarm": 6.5, "napalm": 5.0}
 const MINE_LIFE := 14.0
 const MINE_DAMAGE := 9.0
 const MINE_RADIUS := 0.26

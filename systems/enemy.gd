@@ -31,6 +31,9 @@ var crew: Array = []                # soldiers around a SAM launcher
 var friendly: bool = false          # the player's side (escort plane, hangars)
 var prey: Node3D = null             # what a fighter/diver attacks instead of the player
 var burn_t: float = 0.0             # set on fire by incendiary rounds
+var _rocket_t: float = 4.0          # raider / heli / fortress missiles
+var _station: Vector3 = Vector3.ZERO  # helicopter hover point
+var _flak_t: float = 2.0
 var _warn: Label3D
 var _aim_line: MeshInstance3D
 var _aim_mesh := ImmediateMesh.new()
@@ -122,6 +125,14 @@ func _ready() -> void:
 			parts["belly_bomb"] = bomb
 		"cargo":
 			parts = Models.transport(Models.FRIEND)
+		"heli":
+			parts = Models.heli()
+		"raider":
+			parts = Models.raider()
+			for g in parts.gear:
+				(g as Node3D).rotation.x = -1.45
+		"gunship":
+			parts = Models.fortress()
 		"hangar":
 			parts = Models.hangar()
 		"radar":
@@ -129,20 +140,20 @@ func _ready() -> void:
 		"fuel":
 			parts = Models.fuel_tank()
 	add_child(parts.root)
-	if kind in ["fighter", "ace", "transport", "bomber", "balloon", "diver", "cargo"]:
+	if kind in ["fighter", "ace", "transport", "bomber", "balloon", "diver", "cargo", "heli", "raider", "gunship"]:
 		_shadow = Toon.shadow_blob(radius * 2.6)
 		add_child(_shadow)
-	if kind in ["fighter", "ace", "transport", "bomber", "tank", "truck", "diver", "cargo"]:
+	if kind in ["fighter", "ace", "transport", "bomber", "tank", "truck", "diver", "cargo", "heli", "raider", "gunship"]:
 		_engine = AudioStreamPlayer3D.new()
 		var s = load("res://assets/audio/" + ("tank_engine" if kind in ["tank", "truck"] else "enemy_engine") + ".wav")
 		if s is AudioStreamWAV:
 			(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
 			(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
 		_engine.stream = s
-		_engine.unit_size = 0.7 if kind != "bomber" else 1.4
+		_engine.unit_size = 0.7 if not kind in ["bomber", "gunship"] else 1.4
 		_engine.max_distance = 7.0
-		_engine.volume_db = -20.0 if kind != "bomber" else -12.0
-		_engine.pitch_scale = {"fighter": 1.15, "ace": 1.35, "transport": 0.8, "bomber": 0.6, "tank": 1.0, "truck": 1.25, "diver": 1.05, "cargo": 0.75}[kind]
+		_engine.volume_db = -20.0 if not kind in ["bomber", "gunship"] else -12.0
+		_engine.pitch_scale = {"fighter": 1.15, "ace": 1.35, "transport": 0.8, "bomber": 0.6, "tank": 1.0, "truck": 1.25, "diver": 1.05, "cargo": 0.75, "heli": 1.7, "raider": 0.95, "gunship": 0.5}[kind]
 		_engine.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
 		_engine.bus = &"SFX"
 		add_child(_engine)
@@ -180,7 +191,12 @@ func alive() -> bool:
 
 
 func can_be_locked() -> bool:
-	return alive() and (state == State.ACTIVE or kind == "bomber" or kind == "transport")
+	return alive() and (state == State.ACTIVE or kind in ["bomber", "gunship", "transport", "heli"])
+
+
+## Armoured enemies take less from plain bullets.
+func gun_armor() -> float:
+	return float(WarMath.GUN_ARMOR.get(kind, 1.0))
 
 
 ## Planes: start behind the opening and fly in along its normal.
@@ -224,7 +240,7 @@ func _face(dir: Vector3) -> void:
 func damage(amount: float, at: Vector3 = Vector3.INF) -> bool:
 	if not alive():
 		return false
-	if kind == "bomber" and at != Vector3.INF:
+	if kind in ["bomber", "gunship"] and at != Vector3.INF:
 		var best = null
 		var best_d := 0.085
 		for eng in parts.engines:
@@ -243,7 +259,7 @@ func damage(amount: float, at: Vector3 = Vector3.INF) -> bool:
 			amount *= 0.5
 	hp -= amount
 	hit_flash = 1.0
-	if hp <= 0.0 or (kind == "bomber" and _dead_engines() >= 3):
+	if hp <= 0.0 or (kind in ["bomber", "gunship"] and _dead_engines() >= 3):
 		state = State.DEAD
 		return true
 	return false
@@ -277,8 +293,16 @@ func tick(delta: float) -> void:
 		_animate(delta)
 		return
 	match kind:
-		"fighter", "ace":
+		"fighter", "ace", "raider":
 			_tick_fighter(delta)
+			if kind == "raider" and state == State.ACTIVE:
+				_raider_rockets(delta)
+		"heli":
+			_tick_heli(delta)
+		"gunship":
+			_tick_bomber(delta)
+			if state == State.ACTIVE:
+				_fortress_guns(delta)
 		"soldier":
 			_tick_soldier(delta)
 		"sam":
@@ -554,6 +578,110 @@ func _tick_bomber(delta: float) -> void:
 	if _bomb_t <= 0.0:
 		_bomb_t = _rng.randf_range(4.0, 6.0)
 		battle.enemy_fire("ebomb", (parts.bay as Node3D).global_position, Vector3.DOWN, velocity)
+
+
+## Raider: a homing rocket whenever the player is ahead of its nose.
+func _raider_rockets(delta: float) -> void:
+	_rocket_t -= delta
+	if _rocket_t > 0.0:
+		return
+	var jet: Vector3 = battle.player_position()
+	var to: Vector3 = jet - global_position
+	if to.length() < 3.2 and (flight.fwd as Vector3).dot(to.normalized()) > 0.55:
+		_rocket_t = _rng.randf_range(7.0, 9.0)
+		var s = battle.enemy_fire("sam", global_position + (flight.fwd as Vector3) * 0.12 - Vector3(0, 0.02, 0), to.normalized(), velocity)
+		if s:
+			s.target = battle.plane
+	else:
+		_rocket_t = 0.5
+
+
+## The fortress: side cannon turrets throw flak bursts at the player and the
+## tail launches a homing missile now and then.
+func _fortress_guns(delta: float) -> void:
+	var jet: Vector3 = battle.player_position()
+	for g in parts.get("side_guns", []):
+		var piv: Node3D = g.pivot
+		var local := piv.global_transform.affine_inverse() * jet
+		piv.rotate_object_local(Vector3.UP, clampf(atan2(-local.x, -local.z), -delta * 2.0, delta * 2.0))
+	_flak_t -= delta
+	if _flak_t <= 0.0:
+		_flak_t = _rng.randf_range(2.2, 3.2)
+		for g in parts.get("side_guns", []):
+			var mz: Node3D = g.muzzle
+			var d: Vector3 = (jet + battle.player_velocity() * 0.4 - mz.global_position).normalized()
+			battle.enemy_fire("flak", mz.global_position, d, velocity)
+	_rocket_t -= delta
+	if _rocket_t <= 0.0:
+		_rocket_t = _rng.randf_range(9.0, 12.0)
+		var tail: Node3D = parts.tail
+		var s = battle.enemy_fire("sam", tail.global_position, (jet - tail.global_position).normalized(), velocity)
+		if s:
+			s.target = battle.plane
+
+
+## Attack helicopter: pops up from the floor, hovers at a station in front
+## of the player, turns to face the plane, sidesteps every few seconds,
+## chin-gun bursts and a pair of homing rockets now and then.
+func _tick_heli(delta: float) -> void:
+	(parts.rotor as Node3D).rotate_y(delta * 26.0)
+	(parts.tail_rotor as Node3D).rotate_x(delta * 34.0)
+	var me: Vector3 = flight.pos
+	if state == State.ENTER:
+		me.y = move_toward(me.y, _station.y, delta * 0.55)
+		flight.pos = me
+		global_position = me
+		if absf(me.y - _station.y) < 0.02:
+			state = State.ACTIVE
+			_mode_t = _rng.randf_range(4.0, 6.0)
+		return
+	_mode_t -= delta
+	if _mode_t <= 0.0:
+		_mode_t = _rng.randf_range(5.0, 8.0)
+		_station = battle.clamp_front(me + battle.arena_side * _rng.randf_range(-1.2, 1.2) + battle.arena_fwd * _rng.randf_range(-0.5, 0.5) + Vector3(0, _rng.randf_range(-0.3, 0.3), 0))
+		_station.y = clampf(_station.y, battle.floor_y + 0.8, battle.floor_y + 1.9)
+	var bob := Vector3(0, sin(age * 1.7) * 0.03, 0)
+	var to := _station + bob - me
+	var v: Vector3 = flight.get("vel", Vector3.ZERO)
+	v = v.lerp(to.limit_length(0.5) * 1.2, minf(1.0, delta * 1.5))
+	flight["vel"] = v
+	me += v * delta
+	flight.pos = me
+	var jet: Vector3 = battle.player_position()
+	var face := jet - me
+	face.y = 0.0
+	if face.length() > 0.01:
+		flight.fwd = WarMath.steer(flight.fwd, face.normalized(), 1.6, delta)
+	flight.speed = v.length()
+	global_position = me
+	var tilt_f: float = clampf(v.dot(flight.fwd) * 0.6, -0.25, 0.25)
+	var right: Vector3 = (flight.fwd as Vector3).cross(Vector3.UP).normalized()
+	var tilt_s: float = clampf(v.dot(right) * 0.6, -0.25, 0.25)
+	global_basis = Basis.looking_at(flight.fwd, Vector3.UP) * Basis(Vector3.RIGHT, -tilt_f) * Basis(Vector3.FORWARD, -tilt_s)
+	# Chin gun follows the plane.
+	var gun: Node3D = parts.gun
+	var lg := gun.global_transform.affine_inverse() * jet
+	gun.rotate_object_local(Vector3.UP, clampf(atan2(-lg.x, -lg.z), -delta * 3.0, delta * 3.0))
+	_fire_t -= delta
+	if _fire_t <= 0.0 and _burst <= 0:
+		_burst = 5
+		_fire_t = _rng.randf_range(2.4, 3.4)
+	if _burst > 0:
+		_burst_t -= delta
+		if _burst_t <= 0.0:
+			_burst_t = 0.12
+			_burst -= 1
+			var mz: Node3D = parts.muzzle
+			var dir: Vector3 = (jet + battle.player_velocity() * 0.3 - mz.global_position).normalized()
+			dir = (dir + Vector3(_rng.randf_range(-0.05, 0.05), _rng.randf_range(-0.05, 0.05), _rng.randf_range(-0.05, 0.05))).normalized()
+			battle.enemy_fire("ebullet", mz.global_position, dir, velocity)
+	_rocket_t -= delta
+	if _rocket_t <= 0.0:
+		_rocket_t = _rng.randf_range(9.0, 12.0)
+		var pod: Node3D = parts.pods[_rng.randi() % 2]
+		var s = battle.enemy_fire("sam", pod.global_position, (jet - pod.global_position).normalized(), velocity)
+		if s:
+			s.target = battle.plane
 
 
 func _tick_tank(delta: float) -> void:

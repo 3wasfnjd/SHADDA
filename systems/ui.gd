@@ -144,6 +144,23 @@ static func icon_shape(kind: String) -> PackedVector2Array:
 			return PackedVector2Array([Vector2(-0.3, -0.4), Vector2(-0.08, -0.4), Vector2(-0.08, 0.4), Vector2(-0.3, 0.4)])
 		"stick":
 			return PackedVector2Array([Vector2(-0.4, -0.45), Vector2(0.4, -0.45), Vector2(0.4, -0.25), Vector2(0.06, -0.25), Vector2(0.06, 0.06), Vector2(0.2, 0.2), Vector2(0.2, 0.42), Vector2(-0.2, 0.42), Vector2(-0.2, 0.2), Vector2(-0.06, 0.06), Vector2(-0.06, -0.25), Vector2(-0.4, -0.25)])
+		"minigun":
+			var mg := PackedVector2Array([Vector2(-0.45, -0.3), Vector2(-0.1, -0.3)])
+			for k in range(6):
+				var y := -0.26 + k * 0.1
+				mg.append(Vector2(0.46, y))
+				mg.append(Vector2(0.46, y + 0.06))
+			mg.append(Vector2(-0.1, 0.3))
+			mg.append(Vector2(-0.45, 0.3))
+			return mg
+		"swarm":
+			return PackedVector2Array([Vector2(-0.46, -0.06), Vector2(0.1, -0.06), Vector2(0.1, -0.2), Vector2(0.24, -0.06), Vector2(0.46, 0.0), Vector2(0.24, 0.06), Vector2(0.1, 0.2), Vector2(0.1, 0.06), Vector2(-0.46, 0.06), Vector2(-0.3, 0.0)])
+		"napalm":
+			return PackedVector2Array([Vector2(0, 0.48), Vector2(0.14, 0.18), Vector2(0.3, 0.3), Vector2(0.38, -0.05), Vector2(0.28, -0.35), Vector2(0, -0.46), Vector2(-0.28, -0.35), Vector2(-0.38, -0.05), Vector2(-0.3, 0.3), Vector2(-0.14, 0.18)])
+		"heli":
+			return PackedVector2Array([Vector2(-0.48, 0.34), Vector2(0.48, 0.34), Vector2(0.48, 0.28), Vector2(0.04, 0.28), Vector2(0.04, 0.18), Vector2(0.2, 0.12), Vector2(0.24, -0.04), Vector2(0.12, -0.16), Vector2(-0.1, -0.16), Vector2(-0.2, -0.06), Vector2(-0.48, -0.02), Vector2(-0.48, 0.06), Vector2(-0.22, 0.08), Vector2(-0.12, 0.18), Vector2(-0.04, 0.18), Vector2(-0.04, 0.28), Vector2(-0.48, 0.28)])
+		"missile":
+			return PackedVector2Array([Vector2(0, 0.48), Vector2(0.1, 0.3), Vector2(0.1, -0.2), Vector2(0.24, -0.4), Vector2(0.1, -0.36), Vector2(0.06, -0.46), Vector2(-0.06, -0.46), Vector2(-0.1, -0.36), Vector2(-0.24, -0.4), Vector2(-0.1, -0.2), Vector2(-0.1, 0.3)])
 		"check":
 			return PackedVector2Array([Vector2(-0.45, 0.02), Vector2(-0.3, 0.16), Vector2(-0.12, -0.04), Vector2(0.32, 0.42), Vector2(0.46, 0.28), Vector2(-0.12, -0.32)])
 	return PackedVector2Array([Vector2(-0.4, -0.4), Vector2(0.4, -0.4), Vector2(0.4, 0.4), Vector2(-0.4, 0.4)])

@@ -50,6 +50,10 @@ func _press(text: String) -> bool:
 	return false
 
 
+func M(id: String) -> int:
+	return Missions.index_of(id)
+
+
 func _card(i: int) -> bool:
 	var cards: Array = menus.panel.widgets.filter(func(w): return w.kind == "button" and w.label == null and w.has("hint"))
 	if i >= cards.size() or not cards[i].enabled:
@@ -133,7 +137,7 @@ func _run() -> void:
 				b = e
 		if b:
 			goal = b.hit_center()
-		return c.index == 1, 72 * 150), "balloons popped → straight on to mission 2, no menu")
+		return c.index == M("training") + 1, 72 * 150), "balloons popped → straight on to mission 2, no menu")
 	trig = 0.0
 	assert(battle.phase == Battle.Phase.PLAYING and not menus.is_open() and plane.airborne(), "still flying, no board between missions")
 	assert(c.mode == "intro" and c.continuing)
@@ -166,7 +170,7 @@ func _run() -> void:
 	assert(Profile.progress.special == "lightning" and Profile.progress.gun == "cannon")
 
 	print("STAGE: mission 2 — dawn patrol with the 20 mm cannon and the Thunderbolt")
-	battle.start_mission(1)
+	battle.start_mission(M("patrol"))
 	c = battle.campaign
 	assert(plane.gun_kind == "cannon" and plane.special == "lightning" and plane.power > 1.0)
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
@@ -187,13 +191,13 @@ func _run() -> void:
 		for e in battle.enemies.duplicate():
 			if e.alive() and e.state == Enemy.State.ACTIVE:
 				battle._kill(e, "gun")
-		return c.index == 2, 72 * 40), "patrol cleared → on to the convoy")
+		return c.index == M("patrol") + 1, 72 * 40), "patrol cleared → on to the convoy")
 	assert(Profile.mission("patrol").done and not menus.is_open())
 	assert(battle.get_children().any(func(n): return n is Debris), "shot-down fighters broke into pieces")
 
 	print("STAGE: mission 3 — convoy, 2 s anti-air telegraph, flares")
 	Profile.equip("bombs")
-	battle.start_mission(2)
+	battle.start_mission(M("convoy"))
 	c = battle.campaign
 	goal = Vector3(0, 1.6, -1.5)
 	assert(await _until(func(): return c.mode == "play", 72 * 10))
@@ -224,11 +228,11 @@ func _run() -> void:
 		for e in battle.enemies.duplicate():
 			if e.has_meta("convoy") and e.alive():
 				battle._kill(e, "gun")
-		return c.index == 3, 72 * 50), "convoy destroyed")
+		return c.index == M("convoy") + 1, 72 * 50), "convoy destroyed")
 	assert(Profile.stars_of("convoy") == 3)
 
 	print("STAGE: mission 4 — escort")
-	battle.start_mission(3)
+	battle.start_mission(M("escort"))
 	c = battle.campaign
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
 	assert(await _until(func(): return c.mode == "play", 72 * 10))
@@ -247,11 +251,11 @@ func _run() -> void:
 		for e in battle.enemies.duplicate():
 			if e.alive():
 				battle._kill(e, "gun")
-		return c.index == 4, 72 * 30), "escort complete")
+		return c.index == M("escort") + 1, 72 * 30), "escort complete")
 
 	print("STAGE: mission 5 — burning skies with the incendiary quad")
 	Profile.equip("quad")
-	battle.start_mission(4)
+	battle.start_mission(M("dogfight"))
 	c = battle.campaign
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
 	assert(await _until(func(): return c.mode == "play", 72 * 10))
@@ -269,11 +273,11 @@ func _run() -> void:
 					burned[0] = e.burn_t > 0.0 or not e.alive()
 				else:
 					battle._kill(e, "gun")
-		return c.index == 5, 72 * 100), "three waves down")
+		return c.index == M("dogfight") + 1, 72 * 100), "three waves down")
 	assert(seen.has("ace") and burned[0], "the ace showed up; incendiary set a fighter alight")
 
 	print("STAGE: mission 6 — base raid")
-	battle.start_mission(5)
+	battle.start_mission(M("base"))
 	c = battle.campaign
 	assert(c._targets.size() == 6)
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
@@ -283,11 +287,11 @@ func _run() -> void:
 			if is_instance_valid(e) and e.alive():
 				battle._kill(e, "bomb")
 				break
-		return c.index == 6, 72 * 30), "base destroyed")
+		return c.index == M("base") + 1, 72 * 30), "base destroyed")
 
 	print("STAGE: mission 7 — hold the airfield (dive bombers)")
 	Profile.equip("mines")
-	battle.start_mission(6)
+	battle.start_mission(M("airfield"))
 	c = battle.campaign
 	assert(c._hangars.size() == 3)
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.4, 0)
@@ -308,10 +312,10 @@ func _run() -> void:
 		for e in battle.enemies.duplicate():
 			if e.alive() and e.state == Enemy.State.ACTIVE:
 				battle._kill(e, "gun")
-		return c.index == 7, 72 * 60), "airfield held")
+		return c.index == M("airfield") + 1, 72 * 60), "airfield held")
 
 	print("STAGE: mission 8 — the giant at dusk")
-	battle.start_mission(7)
+	battle.start_mission(M("giant"))
 	c = battle.campaign
 	assert(battle.dusk, "dusk mission dims the room")
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
@@ -325,17 +329,141 @@ func _run() -> void:
 	assert(menus.screen == "debrief", "the end of the sortie shows the debrief")
 
 	print("STAGE: a lost objective is flown again at once")
-	battle.start_mission(3)
+	battle.start_mission(M("escort"))
 	c = battle.campaign
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
 	assert(await _until(func(): return c.mode == "play", 72 * 10))
 	battle.damage_friend(c._cargo, 999.0, c._cargo.global_position)
 	assert(await _until(func(): return c.mode == "failed", 72 * 3), "objective lost")
-	assert(await _until(func(): return c.mode == "play" and c.index == 3 and c._cargo != null and is_instance_valid(c._cargo), 72 * 14), "escort restarted in the air")
+	assert(await _until(func(): return c.mode == "play" and c.index == M("escort") and c._cargo != null and is_instance_valid(c._cargo), 72 * 14), "escort restarted in the air")
 	assert(not menus.is_open() and battle.phase == Battle.Phase.PLAYING)
 
+	print("STAGE: new — helicopter nest (pop up from the floor, hover in front, shoot)")
+	battle.start_mission(M("heli_nest"))
+	c = battle.campaign
+	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
+	assert(await _until(func(): return c.mode == "play", 72 * 10))
+	var heli_h := []
+	assert(await _until(func():
+		for e in battle.enemies:
+			if e.kind == "heli" and heli_h.is_empty():
+				heli_h.append(e)
+		return not heli_h.is_empty(), 72 * 6), "helicopters spawned")
+	var h: Enemy = heli_h[0]
+	var y_start: float = h.global_position.y
+	assert(y_start < battle.floor_y + 0.2, "a helicopter starts on the floor")
+	assert(await _until(func(): return h.state == Enemy.State.ACTIVE, 72 * 8), "it rose to its hover point")
+	assert(h.global_position.y > battle.floor_y + 0.7 and (h.global_position - battle.arena_origin).dot(battle.arena_fwd) > 0.9, "hovering in front of the player")
+	var fired := [false]
+	assert(await _until(func():
+		fired[0] = battle.shots.any(func(sh): return sh.hostile)
+		return fired[0], 72 * 6), "helicopter opens fire")
+	assert(await _until(func():
+		for e in battle.enemies.duplicate():
+			if e.alive() and e.kind in ["heli", "sam", "soldier"]:
+				battle._kill(e, "gun")
+		return c.index == M("heli_nest") + 1, 72 * 60), "three helicopter waves down")
+
+	print("STAGE: new — missile storm (survive; missiles beaten)")
+	battle.start_mission(M("missile_storm"))
+	c = battle.campaign
+	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.2, 0)
+	assert(await _until(func(): return c.mode == "play", 72 * 10))
+	assert(await _until(func(): return battle.shots.any(func(sh): return sh.kind == "sam"), 72 * 12), "missiles in the air")
+	var m0 := battle.missiles_beaten
+	var sm: Shot = battle.shots.filter(func(sh): return sh.kind == "sam")[0]
+	sm.global_position = battle.arena_center + Vector3(0, 2.2, 0)   # clear of its launcher
+	sm.prev = sm.global_position
+	var shot := battle.player_fire("bullet", sm.global_position - Vector3(0, 0, 0.1), Vector3.BACK, Vector3.ZERO, null)
+	shot.prev = sm.global_position - Vector3(0, 0, 0.1)
+	shot.global_position = sm.global_position + Vector3(0, 0, 0.05)
+	battle._resolve(shot)
+	assert(battle.missiles_beaten == m0 + 1, "shooting a missile down counts")
+	c.t = Campaign.STORM_TIME
+	assert(await _until(func(): return c.index == M("missile_storm") + 1, 72 * 8), "storm survived")
+
+	print("STAGE: new — iron raiders (armour, homing rockets)")
+	battle.start_mission(M("raiders"))
+	c = battle.campaign
+	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
+	assert(await _until(func(): return c.mode == "play", 72 * 10))
+	var rh := []
+	assert(await _until(func():
+		for e in battle.enemies:
+			if e.kind == "raider" and e.state == Enemy.State.ACTIVE and rh.is_empty():
+				rh.append(e)
+		return not rh.is_empty(), 72 * 10), "raiders arrived")
+	var rd: Enemy = rh[0]
+	var hp0: float = rd.hp
+	var b2 := battle.player_fire("bullet", rd.hit_center() - Vector3(0, 0, 0.3), Vector3.BACK, Vector3.ZERO, null)
+	b2.prev = rd.hit_center() - Vector3(0, 0, 0.3)
+	b2.global_position = rd.hit_center() + Vector3(0, 0, 0.05)
+	var full: float = b2.damage
+	battle._resolve(b2)
+	assert(absf((hp0 - rd.hp) - full * WarMath.GUN_ARMOR.raider) < 0.01, "armour halves plain bullets (%.2f of %.2f)" % [hp0 - rd.hp, full])
+	rd.flight.pos = plane.global_position - plane.forward() * 1.5
+	rd.flight.fwd = plane.forward()
+	rd._rocket_t = 0.0
+	var before_sams := battle.shots.filter(func(sh): return sh.kind == "sam").size()
+	rd._raider_rockets(0.01)
+	assert(battle.shots.filter(func(sh): return sh.kind == "sam").size() == before_sams + 1, "raider fires a homing rocket")
+	assert(await _until(func():
+		for e in battle.enemies.duplicate():
+			if e.alive() and e.kind in ["raider", "heli"]:
+				battle._kill(e, "rocket")
+		return c.index == M("raiders") + 1, 72 * 60), "raiders defeated")
+
+	print("STAGE: new — flying fortress (side cannons, missiles, three engines)")
+	battle.start_mission(M("fortress"))
+	c = battle.campaign
+	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
+	assert(await _until(func(): return c.mode == "play", 72 * 10))
+	var fort: Enemy = c._fortress
+	assert(fort != null and fort.kind == "gunship" and fort.parts.side_guns.size() == 2)
+	assert(await _until(func(): return fort.state == Enemy.State.ACTIVE, 72 * 14), "fortress arrived")
+	assert(await _until(func(): return battle.shots.any(func(sh): return sh.kind == "flak"), 72 * 6), "side cannons fire flak")
+	for eng in fort.parts.engines.slice(0, 3):
+		fort.damage(200.0, (eng.node as Node3D).global_position)
+	assert(fort.state == Enemy.State.DEAD)
+	battle._kill(fort, "rocket")
+	assert(await _until(func():
+		for e in battle.enemies.duplicate():
+			if e.alive() and e.kind == "heli":
+				battle._kill(e, "gun")
+		return c.index == M("fortress") + 1, 72 * 20), "fortress down")
+
+	print("STAGE: new weapons — minigun, rocket swarm, napalm")
+	Profile.progress.coins = 9000
+	for it in ["minigun", "swarm", "napalm"]:
+		menus._buy_or_equip(it)
+		assert(Profile.owns(it))
+	Profile.equip("minigun")
+	Profile.equip("swarm")
+	battle.start_mission(M("dogfight"))
+	c = battle.campaign
+	assert(plane.gun_kind == "minigun" and plane.special == "swarm")
+	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
+	assert(await _until(func(): return c.mode == "play", 72 * 10))
+	assert(await _until(func(): return battle.enemies.any(func(e): return e.kind == "fighter" and e.state == Enemy.State.ACTIVE), 72 * 12))
+	var tf: Enemy = battle.enemies.filter(func(e): return e.kind == "fighter" and e.state == Enemy.State.ACTIVE)[0]
+	plane.flight.pos = tf.hit_center() - (tf.flight.fwd as Vector3) * 1.2
+	plane.flight.basis = Basis.looking_at(tf.flight.fwd, Vector3.UP)
+	plane._apply_pose()
+	var rockets0 := battle.shots.filter(func(sh): return sh.kind == "rocket").size()
+	assert(plane.fire_swarm(), "swarm fired")
+	var swarm_shots: Array = battle.shots.filter(func(sh): return sh.kind == "rocket")
+	assert(swarm_shots.size() == rockets0 + WarMath.SWARM_ROCKETS and swarm_shots.any(func(sh): return sh.target == tf), "six mini rockets, homing on the fighter")
+	Profile.equip("napalm")
+	plane.refresh_loadout()
+	assert(plane.special == "napalm")
+	var tank: Enemy = battle.spawn_at("tank", battle.arena_center, -battle.arena_fwd)
+	var thp: float = tank.hp
+	battle._fire_zones.append({"at": tank.global_position, "t": 2.0, "fx": 0.0})
+	await _until(func(): return false, 72)
+	assert(not tank.alive() or tank.hp < thp - 1.5, "napalm burns what stands in it")
+
 	print("STAGE: pause")
-	battle.start_mission(0)
+	battle.start_mission(M("training"))
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
 	await _until(func(): return false, 30)
 	battle.pause_game()
@@ -347,7 +475,7 @@ func _run() -> void:
 
 	print("STAGE: shot down on Normal → breaks apart, pilot bails out, mission failed")
 	Profile.set_s("difficulty", "normal")
-	battle.start_mission(4)
+	battle.start_mission(M("dogfight"))
 	c = battle.campaign
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
 	assert(await _until(func(): return c.mode == "play", 72 * 10))
@@ -360,7 +488,7 @@ func _run() -> void:
 
 	print("STAGE: easy mode can't lose the plane")
 	Profile.set_s("difficulty", "easy")
-	battle.start_mission(4)
+	battle.start_mission(M("dogfight"))
 	plane.take_hit(999.0)
 	assert(plane.alive() and plane.hp >= WarMath.PLANE_HP * WarMath.MIN_HP_FRACTION - 0.01)
 
@@ -380,7 +508,7 @@ func _run() -> void:
 	for scr in ["main", "missions", "hangar", "controls"]:
 		menus.open(scr)
 		assert(menus.is_open())
-	print("PASS: campaign v1.0 — menus, 8 missions, hangar + new weapons, 2 s anti-air telegraph, flares, escort, dive bombers, dusk, pause, breakup + bail-out, settings (%d★, %d gold left)" % [Profile.total_stars(), int(Profile.progress.coins)])
+	print("PASS: campaign v1.1 — menus, 12 missions (helicopters, missile storm, armoured raiders, flying fortress), hangar + new weapons, 2 s anti-air telegraph, flares, escort, dive bombers, dusk, pause, breakup + bail-out, settings (%d★, %d gold left)" % [Profile.total_stars(), int(Profile.progress.coins)])
 	quit(0)
 
 

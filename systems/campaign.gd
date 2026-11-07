@@ -258,6 +258,8 @@ func on_killed(e: Enemy) -> void:
 		_destroyed += 1
 	if e == _bomber:
 		_bomber = null
+	if e == _fortress:
+		_fortress = null
 
 
 # --- 4 escort -----------------------------------------------------------------------------
@@ -439,6 +441,129 @@ func _play_giant(delta: float) -> void:
 		_fly_in("fighter", _rng.randi() % 3)
 
 
+# --- helicopter nest -------------------------------------------------------------------------------
+
+func _setup_heli_nest() -> void:
+	_waves = [2, 3, 3]
+	_wave_i = -1
+	_spawn_t = 1.0
+
+
+func _heli_pop(k: int) -> Enemy:
+	# They hide on the far half of the floor and rise straight up.
+	var at := center + side * _rng.randf_range(-2.0, 2.0) + fwd * _rng.randf_range(0.8, 1.9)
+	at.y = battle.floor_y + _rng.randf_range(1.0, 1.6)
+	var e: Enemy = battle.spawn_at("heli", at, -fwd)
+	e.set_meta("wave_k", k)
+	return e
+
+
+func _play_heli_nest(delta: float) -> void:
+	var alive := _alive_of(["heli"]) + _falling_of(["heli"])
+	if alive == 0:
+		_spawn_t -= delta
+		if _spawn_t <= 0.0:
+			_wave_i += 1
+			if _wave_i >= _waves.size():
+				_win(hull_lost() < 40.0, t <= 120.0)
+				return
+			for k in range(_waves[_wave_i]):
+				_heli_pop(k)
+			if _wave_i == 2:
+				_sam_team(center + fwd * 1.6 + side * _rng.randf_range(-1.0, 1.0))
+			battle.callout(Lang.t("heli_up"), Color(1.0, 0.6, 0.3), 2.0)
+			battle.cue("alarm", battle.head_position(), -4.0)
+			_spawn_t = 2.5
+	objective = Lang.t("heli_line") % [maxi(1, _wave_i + 1), _alive_of(["heli"])]
+
+
+# --- missile storm -----------------------------------------------------------------------------------
+
+const STORM_TIME := 50.0
+func _setup_missile_storm() -> void:
+	battle.missiles_beaten = 0
+	_spawn_t = 0.5
+	_sam_team(center + fwd * 1.2 - side * 1.4)
+	_sam_team(center + fwd * 1.6 + side * 1.3)
+	_events.append([18.0, func():
+		var e := _fly_in("raider", 0)
+		e.practice = false])
+	_events.append([34.0, func():
+		var e := _fly_in("raider", 1)
+		e.practice = false])
+
+
+func _play_missile_storm(delta: float) -> void:
+	_spawn_t -= delta
+	if _spawn_t <= 0.0:
+		_spawn_t = 7.0
+		if _alive_of(["sam"]) < 3:
+			_sam_team(center + side * _rng.randf_range(-2.0, 2.0) + fwd * _rng.randf_range(0.6, 2.0))
+	var left := maxi(0, int(ceil(STORM_TIME - t)))
+	objective = Lang.t("storm_line") % [left, battle.missiles_beaten]
+	if t >= STORM_TIME:
+		_win(battle.missiles_beaten >= 4, hull_lost() < 25.0)
+
+
+# --- iron raiders ---------------------------------------------------------------------------------------
+
+func _setup_raiders() -> void:
+	_waves = [["raider", "raider"], ["raider", "raider", "heli"], ["raider", "raider", "raider"]]
+	_wave_i = -1
+	_spawn_t = 1.0
+	_events.append([2.0, func(): battle.callout(Lang.t("armored_tip"), Color(1.0, 0.75, 0.3), 4.0)])
+
+
+func _play_raiders(delta: float) -> void:
+	var planes := _alive_of(["raider", "heli"]) + _falling_of(["raider", "heli"])
+	if planes == 0:
+		_spawn_t -= delta
+		if _spawn_t <= 0.0:
+			_wave_i += 1
+			if _wave_i >= _waves.size():
+				_win(hull_lost() < 40.0, t <= 150.0)
+				return
+			for k in range(_waves[_wave_i].size()):
+				var kind: String = _waves[_wave_i][k]
+				if kind == "heli":
+					_heli_pop(k)
+				else:
+					var e := _fly_in(kind, k)
+					e.practice = false
+			battle.cue("alarm", battle.head_position(), -4.0)
+			_spawn_t = 2.5
+	objective = Lang.t("raider_line") % [maxi(1, _wave_i + 1), _alive_of(["raider"])]
+
+
+# --- flying fortress -------------------------------------------------------------------------------------
+
+var _fortress: Enemy = null
+func _setup_fortress() -> void:
+	var from := center + fwd * 4.8 + Vector3(0, 1.9, 0)
+	_fortress = battle.spawn_at("gunship", from, -fwd)
+	_fortress.target_marked = true
+	_spawn_t = 3.0
+	battle.callout(Lang.t("fortress_in"), Color(1.0, 0.5, 0.25), 3.0)
+	battle.cue("siren", battle.head_position() + Vector3(0, 0.5, 0), -4.0)
+
+
+func _play_fortress(delta: float) -> void:
+	if _fortress == null or not is_instance_valid(_fortress) or not _fortress.alive():
+		if _falling_of(["gunship"]) == 0 and t > 1.0:
+			_win(hull_lost() < 50.0, t <= 150.0)
+		objective = Lang.t("giant_down")
+		return
+	var dead := 0
+	for eng in _fortress.parts.engines:
+		if eng.hp <= 0.0:
+			dead += 1
+	objective = "%s · %s" % [Lang.t("fortress_line") % dead, _clock()]
+	_spawn_t -= delta
+	if _spawn_t <= 0.0 and _alive_of(["heli"]) < 2:
+		_spawn_t = 12.0
+		_heli_pop(_rng.randi() % 3)
+
+
 # --- helpers -------------------------------------------------------------------------------------------
 
 ## Enemy planes come in from far ahead, toward the player's front.
@@ -500,6 +625,7 @@ func clear() -> void:
 	_targets.clear()
 	_events.clear()
 	_bomber = null
+	_fortress = null
 	_cargo = null
 	_hangars.clear()
 

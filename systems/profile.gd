@@ -27,12 +27,12 @@ const PRICES := {
 	# Upgrade tracks: three levels each.
 	"engine": [150, 300, 500], "armor": [150, 300, 500], "guns": [150, 300, 500], "rockets": [150, 300, 500],
 	# Guns (right trigger) and specials (A button) and flares.
-	"twin": 0, "quad": 450, "cannon": 650,
-	"bombs": 0, "cluster": 350, "mines": 500, "lightning": 750,
+	"twin": 0, "quad": 450, "cannon": 650, "minigun": 900,
+	"bombs": 0, "cluster": 350, "mines": 500, "lightning": 750, "swarm": 850, "napalm": 700,
 	"flares": 300,
 }
-const GUNS := ["twin", "quad", "cannon"]
-const SPECIALS := ["bombs", "cluster", "mines", "lightning"]
+const GUNS := ["twin", "quad", "cannon", "minigun"]
+const SPECIALS := ["bombs", "cluster", "mines", "lightning", "swarm", "napalm"]
 const TRACKS := ["engine", "armor", "guns", "rockets"]
 
 static var settings: Dictionary = DEFAULT_SETTINGS.duplicate()

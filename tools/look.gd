@@ -65,6 +65,9 @@ func _run() -> void:
 		"balloon": func(): return Models.balloon().root,
 		"crate": func(): return Models.crate().root,
 		"hangar": func(): return Models.hangar().root,
+		"heli": func(): return Models.heli().root,
+		"raider": func(): return Models.raider().root,
+		"fortress": func(): return Models.fortress().root,
 		"diver": func(): return Models.fighter(Models.DIVER).root,
 		"cargo_friend": func(): return Models.transport(Models.FRIEND).root,
 	}

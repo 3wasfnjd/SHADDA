@@ -234,9 +234,9 @@ static func transport(palette: Dictionary = {}) -> Dictionary:
 
 
 ## The boss: a four-engine bomber with turrets. ~70 cm span.
-static func bomber() -> Dictionary:
+static func bomber(body_color: Color = Color(0.33, 0.37, 0.44)) -> Dictionary:
 	var pal := ENEMY.duplicate()
-	pal.body = Color(0.33, 0.37, 0.44)
+	pal.body = body_color
 	var root := Node3D.new()
 	root.name = "Bomber"
 	var o := 0.003
@@ -446,7 +446,7 @@ static func crate() -> Dictionary:
 # --- the player's own model ----------------------------------------------------------
 
 const PLAYER_MESH := "res://assets/models/player_plane.res"
-const PILOT_SEAT := Vector3(0.0, 0.028, 0.012)
+const PILOT_SEAT := Vector3(0.0, 0.024, -0.031)
 const PLAYER_TEX := "res://assets/models/player_plane_albedo.jpg"
 
 
@@ -462,7 +462,12 @@ static func player_plane(outline: float = 0.0018) -> Dictionary:
 	root.name = "PlayerPlane"
 	var body := MeshInstance3D.new()
 	body.mesh = load(PLAYER_MESH)
-	body.material_override = Toon.textured(load(PLAYER_TEX), 0.2, 0.0012)
+	var skin := Toon.textured(load(PLAYER_TEX), 0.3, 0.0012)
+	# Richer paint: a touch darker base, deeper shadow side, crisp rim light.
+	skin.set_shader_parameter("albedo", Color(0.9, 0.88, 0.86))
+	skin.set_shader_parameter("shade", Color(0.42, 0.4, 0.52))
+	skin.set_shader_parameter("rim", 0.2)
+	body.material_override = skin
 	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Pre-cut pieces for the crash (tools/split_player_plane.gd).
 	var cut := {}
@@ -484,7 +489,20 @@ static func player_plane(outline: float = 0.0018) -> Dictionary:
 	pil.root.scale = Vector3.ONE * 1.35
 	root.add_child(pil.root)
 	var tips: Array = [pivot(root, "WingTip", Vector3(0.165, -0.02, 0.0)), pivot(root, "WingTip", Vector3(-0.165, -0.02, 0.0))]
-	return {"root": root, "body": body, "prop": p.prop, "blur": p.blur, "gear": [], "rockets": arm.rockets, "bombs": arm.bombs, "muzzles": arm.muzzles, "nose": nose, "exhaust": exhaust, "gear_height": 0.0865, "parked_pitch": 0.0, "pilot": pil, "tips": tips}
+	# Navigation lights: green right tip, red left tip, white tail.
+	var lights: Array = []
+	for spec in [[Vector3(0.168, -0.016, 0.005), Color(0.3, 1.0, 0.4)], [Vector3(-0.168, -0.016, 0.005), Color(1.0, 0.25, 0.2)], [Vector3(0.0, 0.05, 0.152), Color(1.0, 1.0, 0.92)]]:
+		var l := Toon.add(root, Toon.ball(0.0042, 8, 5), Toon.flat(spec[1]), spec[0])
+		lights.append(l)
+	# Exhaust flames (shown with throttle and boost).
+	var flames: Array = []
+	for ex in exhaust:
+		var fl := Toon.add(ex, Toon.can(0.0, 0.006, 0.03, 8), Toon.flat(Color(1.0, 0.62, 0.15, 0.9)), Vector3(0, 0, 0.015), Vector3(90, 0, 0))
+		var core := Toon.add(fl, Toon.can(0.0, 0.003, 0.02, 8), Toon.flat(Color(1.0, 0.95, 0.7, 1.0)), Vector3(0, -0.003, 0))
+		core.visible = true
+		fl.visible = false
+		flames.append(fl)
+	return {"root": root, "body": body, "prop": p.prop, "blur": p.blur, "gear": [], "rockets": arm.rockets, "bombs": arm.bombs, "muzzles": arm.muzzles, "nose": nose, "exhaust": exhaust, "gear_height": 0.0865, "parked_pitch": 0.0, "pilot": pil, "tips": tips, "lights": lights, "flames": flames}
 
 
 ## Guns, rocket rails and bombs under the wings. `y` is the wing underside.
@@ -743,3 +761,113 @@ static func hangar() -> Dictionary:
 		Toon.add(root, Toon.capsule(0.008, 0.03, 8), Toon.mat(KHAKI, 0.2, 0.001), Vector3(-0.075 + k * 0.03, 0.006, -0.15), Vector3(0, 0, 90))
 	Toon.bake(root)
 	return {"root": root}
+
+
+const RAIDER := {"body": Color(0.24, 0.26, 0.29), "trim": Color(1.0, 0.5, 0.1), "ring": Color(1.0, 0.5, 0.1), "disc": Color(0.12, 0.12, 0.13), "mark": Color(1.0, 0.5, 0.1), "mark_kind": "diamond", "tip": Color(1.0, 0.5, 0.1), "nose": Color(0.12, 0.12, 0.13)}
+const HELI_GREEN := Color(0.36, 0.42, 0.28)
+
+
+## Armored raider: a heavy gunmetal fighter with bolted armour plates, four
+## guns and rocket rails under the wings. Returns the fighter dict + "rails".
+static func raider() -> Dictionary:
+	var f := fighter(RAIDER, 0.002)
+	var root: Node3D = f.root
+	var plate := Toon.mat(Color(0.38, 0.4, 0.42), 0.7, 0.0015)
+	var orange := Toon.mat(Color(1.0, 0.5, 0.1), 0.4, 0.0012)
+	var dark := Toon.mat(DARK, 0.4, 0.0012)
+	# Armour: a bolted plate over the nose and slabs on each wing root.
+	Toon.add(root, Toon.block(Vector3(0.05, 0.022, 0.07)), plate, Vector3(0, 0.022, -0.07))
+	for side: float in [-1.0, 1.0]:
+		Toon.add(root, Toon.block(Vector3(0.06, 0.008, 0.05)), plate, Vector3(0.07 * side, 0.004, 0.0))
+		for k in range(2):
+			Toon.add(root, Toon.ball(0.0035, 6, 3), Toon.mat(METAL, 0.8, 0.0), Vector3((0.05 + k * 0.04) * side, 0.009, 0.018))
+		# Extra guns and a rocket rail with two rockets.
+		Toon.add(root, Toon.can(0.004, 0.004, 0.06, 8), dark, Vector3(0.1 * side, -0.004, -0.06), Vector3(90, 0, 0))
+		Toon.add(root, Toon.block(Vector3(0.008, 0.006, 0.07)), dark, Vector3(0.13 * side, -0.014, -0.005))
+		for k in range(2):
+			Toon.add(root, Toon.capsule(0.006, 0.05, 8), orange, Vector3(0.13 * side + (k - 0.5) * 0.014, -0.022, -0.01), Vector3(90, 0, 0))
+	root.scale = Vector3.ONE * 1.12
+	return f
+
+
+## Attack helicopter (~32 cm): bubble canopy, stub wings with rocket pods,
+## chin gun, tail boom; main and tail rotors spin.
+static func heli() -> Dictionary:
+	var root := Node3D.new()
+	root.name = "Heli"
+	var o := 0.002
+	var body := Toon.mat(HELI_GREEN, 0.45, o)
+	var dark := Toon.mat(DARK, 0.4, o)
+	var metal := Toon.mat(METAL, 0.6, o)
+	var yellow := Toon.mat(YELLOW, 0.4, o)
+	# Fuselage: a fat egg, glass bubble at the front.
+	Toon.add(root, Toon.ball(0.06, 18, 12), body, Vector3(0, 0, 0), Vector3.ZERO, Vector3(0.9, 0.85, 1.35))
+	Toon.add(root, Toon.ball(0.042, 16, 10), Toon.mat(GLASS, 0.9, o), Vector3(0, 0.012, -0.06), Vector3.ZERO, Vector3(0.95, 0.85, 1.0))
+	# Tail boom, fin, little stabiliser, tail rotor.
+	Toon.add(root, Toon.can(0.012, 0.022, 0.2, 12), body, Vector3(0, 0.018, 0.16), Vector3(90, 0, 0))
+	Toon.add(root, Toon.slab(PackedVector2Array([Vector2(-0.01, 0.0), Vector2(0.03, 0.0), Vector2(0.035, 0.06), Vector2(0.015, 0.06)]), 0.006), body, Vector3(0, 0.02, 0.255), Vector3(0, 90, 90))
+	Toon.add(root, Toon.block(Vector3(0.08, 0.005, 0.025)), body, Vector3(0, 0.02, 0.23))
+	var tail_rotor := pivot(root, "TailRotor", Vector3(0.012, 0.06, 0.27))
+	for k in range(2):
+		Toon.add(tail_rotor, Toon.block(Vector3(0.003, 0.06, 0.008)), dark, Vector3.ZERO, Vector3(k * 90.0, 0, 0))
+	# Mast and main rotor (two long blades, yellow tips).
+	Toon.add(root, Toon.can(0.008, 0.012, 0.035, 10), metal, Vector3(0, 0.065, 0.0))
+	var rotor := pivot(root, "Rotor", Vector3(0, 0.085, 0.0))
+	Toon.add(rotor, Toon.ball(0.012, 10, 6), metal)
+	for k in range(2):
+		var blade := Node3D.new()
+		blade.rotation.y = PI * k
+		rotor.add_child(blade)
+		Toon.add(blade, Toon.block(Vector3(0.022, 0.003, 0.3)), dark, Vector3(0, 0, 0.15))
+		Toon.add(blade, Toon.block(Vector3(0.0225, 0.0035, 0.025)), yellow, Vector3(0, 0, 0.29))
+	# Stub wings with rocket pods, and a chin gun.
+	var pods: Array = []
+	for side: float in [-1.0, 1.0]:
+		Toon.add(root, Toon.block(Vector3(0.07, 0.006, 0.03)), body, Vector3(0.075 * side, -0.005, 0.0))
+		var pod := Node3D.new()
+		pod.position = Vector3(0.1 * side, -0.02, -0.005)
+		root.add_child(pod)
+		Toon.add(pod, Toon.can(0.014, 0.014, 0.06, 12), dark, Vector3.ZERO, Vector3(90, 0, 0))
+		Toon.add(pod, Toon.can(0.0145, 0.0145, 0.006, 12), Toon.mat(RED, 0.4, 0.0), Vector3(0, 0, -0.03), Vector3(90, 0, 0))
+		pods.append(pod)
+	var gun := pivot(root, "ChinGun", Vector3(0, -0.045, -0.06))
+	Toon.add(gun, Toon.ball(0.012, 10, 6), dark)
+	Toon.add(gun, Toon.can(0.003, 0.003, 0.04, 6), metal, Vector3(0, 0, -0.022), Vector3(90, 0, 0))
+	var muzzle := Node3D.new()
+	muzzle.position = Vector3(0, 0, -0.045)
+	gun.add_child(muzzle)
+	# Skids.
+	for side: float in [-1.0, 1.0]:
+		Toon.add(root, Toon.capsule(0.004, 0.18, 6), metal, Vector3(0.045 * side, -0.075, 0.0), Vector3(90, 0, 0))
+		for z: float in [-0.04, 0.04]:
+			Toon.add(root, Toon.can(0.0025, 0.0025, 0.03, 6), metal, Vector3(0.04 * side, -0.06, z), Vector3(0, 0, 20 * side))
+	# Star on the side.
+	for side: float in [-1.0, 1.0]:
+		Toon.add(root, Toon.slab(Toon.star(0.012), 0.002), yellow, Vector3(0.054 * side, 0.005, 0.02), Vector3(0, 0, 90 * side))
+	return {"root": root, "rotor": rotor, "tail_rotor": tail_rotor, "pods": pods, "gun": gun, "muzzle": muzzle}
+
+
+## The flying fortress: the four-engine bomber in black and orange, armour
+## plating and two extra side cannon turrets.
+static func fortress() -> Dictionary:
+	var b := bomber(Color(0.2, 0.21, 0.24))
+	var root: Node3D = b.root
+	root.name = "Fortress"
+	var plate := Toon.mat(Color(0.3, 0.31, 0.33), 0.6, 0.003)
+	var orange := Toon.mat(Color(1.0, 0.5, 0.1), 0.45, 0.002)
+	# Armour belts and orange stripes.
+	for z: float in [-0.1, 0.05, 0.18]:
+		Toon.add(root, Toon.can(0.066, 0.066, 0.025, 20), plate, Vector3(0, 0, z), Vector3(90, 0, 0))
+	Toon.add(root, Toon.can(0.0665, 0.0665, 0.012, 20), orange, Vector3(0, 0, -0.16), Vector3(90, 0, 0))
+	var side_guns: Array = []
+	for side: float in [-1.0, 1.0]:
+		var t := pivot(root, "SideTurret", Vector3(0.062 * side, 0.0, 0.02))
+		Toon.add(t, Toon.ball(0.026, 12, 8), plate)
+		for k in range(2):
+			Toon.add(t, Toon.can(0.004, 0.004, 0.06, 8), Toon.mat(DARK, 0.4, 0.0015), Vector3(0.012 * (k - 0.5) * 2.0, 0.006, -0.03), Vector3(90, 0, 0))
+		var mz := Node3D.new()
+		mz.position = Vector3(0, 0.006, -0.062)
+		t.add_child(mz)
+		side_guns.append({"pivot": t, "muzzle": mz})
+	b["side_guns"] = side_guns
+	return b

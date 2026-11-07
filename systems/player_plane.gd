@@ -321,6 +321,28 @@ func _apply_pose() -> void:
 	global_basis = b
 
 
+## Nav lights blink, exhaust flames flicker with throttle and boost, and a
+## badly damaged plane burns at the engine.
+var _detail_t: float = 0.0
+func _animate_details(delta: float) -> void:
+	_detail_t += delta
+	var lights: Array = model.get("lights", [])
+	for i in range(lights.size()):
+		var on := fmod(_detail_t + i * 0.15, 1.2) < 0.75 if i < 2 else fmod(_detail_t, 0.9) < 0.12
+		(lights[i] as Node3D).visible = on and state != State.WRECKED
+	var flames: Array = model.get("flames", [])
+	var fire := state == State.FLYING and (throttle > 0.55 or boosting)
+	for f in flames:
+		var n := f as Node3D
+		n.visible = fire
+		if fire:
+			var k := (1.6 if boosting else 0.6 + throttle * 0.5) * randf_range(0.8, 1.2)
+			n.scale = Vector3(1.0, k, 1.0)
+	if alive() and hp < WarMath.PLANE_HP * 0.25 and battle and randf() < delta * 14.0:
+		var ex: Node3D = model.exhaust[randi() % 2]
+		Fx.flame(battle, ex.global_position, 0.012)
+
+
 func _animate(delta: float) -> void:
 	_apply_pose()
 	(model.prop as Node3D).rotate_object_local(Vector3.FORWARD, delta * (4.0 + 70.0 * _rpm) * (1.0 if state == State.FLYING else 0.2))
@@ -354,6 +376,7 @@ func _animate(delta: float) -> void:
 	if _engine.playing:
 		_engine.pitch_scale = clampf(0.5 + _rpm * 0.45 + float(flight.speed) * 0.25, 0.4, 2.0)
 		_engine.volume_db = -16.0 + _rpm * 4.0 + (2.0 if boosting else 0.0)
+	_animate_details(delta)
 	if alive() and hp < WarMath.PLANE_HP * 0.5 and battle:
 		_smoke_t -= delta
 		if _smoke_t <= 0.0:
@@ -435,6 +458,8 @@ func _fire_guns() -> void:
 		if randf() < (0.5 if gun_kind != "cannon" else 1.0):
 			Fx.muzzle(battle, m.global_position, dir, 0.018 if gun_kind != "cannon" else 0.03)
 	battle.cue("cannon20" if gun_kind == "cannon" else "gun", global_position, -5.0 if gun_kind != "quad" else -3.0)
+	if gun_kind == "minigun":
+		Fx.muzzle(battle, nose() + forward() * 0.02, forward(), 0.022)
 	_haptic(0.12 if gun_kind != "cannon" else 0.35, 0.02 if gun_kind != "cannon" else 0.05)
 
 
@@ -504,7 +529,20 @@ func use_special() -> bool:
 			return drop_mine()
 		"lightning":
 			return fire_lightning()
+		"swarm":
+			return fire_swarm()
 	return drop_bomb()
+
+
+func fire_swarm() -> bool:
+	if not airborne() or bombs <= 0 or battle == null:
+		return false
+	bombs -= 1
+	_bomb_reload = float(WarMath.SPECIAL_RELOAD.swarm)
+	refresh_stores()
+	battle.swarm(nose(), forward(), velocity)
+	_haptic(0.7, 0.2)
+	return true
 
 
 func drop_mine() -> bool:
@@ -698,7 +736,7 @@ func refresh_stores() -> void:
 	for i in range(model.rockets.size()):
 		(model.rockets[i] as Node3D).visible = i < rockets
 	for i in range(model.bombs.size()):
-		(model.bombs[i] as Node3D).visible = i < bombs and special != "lightning"
+		(model.bombs[i] as Node3D).visible = i < bombs and not special in ["lightning", "swarm"]
 
 
 func _haptic(amplitude: float, duration: float) -> void:

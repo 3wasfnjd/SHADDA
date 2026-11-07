@@ -62,6 +62,8 @@ const ARENA_NEAR := 1.0
 const ARENA_FAR := 4.6
 var _arena_marks: Array = []
 var _low_warned: bool = false
+var missiles_beaten: int = 0         # homing missiles shot down, rolled off or decoyed
+var _fire_zones: Array = []          # napalm: {at, t}
 signal dusk_changed(on: bool)
 var hands: Array = []            # XRControllers for rumble (optional)
 var aim_origin: Vector3 = Vector3.ZERO
@@ -631,6 +633,7 @@ func _physics_process(delta: float) -> void:
 		if is_instance_valid(f):
 			f.tick(delta)
 	_step_burns(delta)
+	_step_fire_zones(delta)
 	_step_pickups(delta)
 	_update_marks()
 	_step_callout(delta)
@@ -756,9 +759,19 @@ func spawn_at(kind: String, pos: Vector3, facing: Vector3) -> Enemy:
 	enemies.append(e)
 	var f := facing.normalized() if facing.length() > 0.01 else Vector3.FORWARD
 	match kind:
-		"fighter", "ace", "transport", "bomber":
+		"fighter", "ace", "transport", "bomber", "raider", "gunship":
 			e.enter_through({"center": pos + f * 0.55, "base": Vector3(pos.x, floor_y, pos.z), "normal": f, "width": 1.0, "height": 1.0})
-			cue("plane_in", pos, 2.0 if kind == "bomber" else 0.0)
+			cue("plane_in", pos, 2.0 if kind in ["bomber", "gunship"] else 0.0)
+		"heli":
+			# Hidden on the floor, it lifts straight up to its hover point.
+			var g0 := surface_below(Vector3(pos.x, pos.y + 0.5, pos.z)) + 0.08
+			e.flight = {"pos": Vector3(pos.x, g0, pos.z), "fwd": Vector3(f.x, 0, f.z).normalized() if Vector3(f.x, 0, f.z).length() > 0.01 else Vector3.FORWARD, "speed": 0.0, "bank": 0.0, "vel": Vector3.ZERO}
+			e._station = pos
+			e.global_position = e.flight.pos
+			e.look_at(e.global_position + e.flight.fwd, Vector3.UP)
+			e.state = Enemy.State.ENTER
+			Fx.smoke(self, e.global_position, 0.08)
+			cue("plane_in", pos, -2.0)
 		"balloon":
 			var ground := surface_below(pos + Vector3(0, 0.5, 0))
 			e.set_meta("height", maxf(0.4, pos.y - ground))
@@ -942,7 +955,7 @@ func _resolve(s: Shot) -> void:
 		return
 	if s.kind == "mine":
 		for e in enemies:
-			if e.alive() and e.kind in ["fighter", "ace", "diver", "transport", "bomber", "balloon"] and e.hit_center().distance_to(b) < e.radius + 0.07:
+			if e.alive() and e.kind in ["fighter", "ace", "diver", "transport", "bomber", "balloon", "heli", "raider", "gunship"] and e.hit_center().distance_to(b) < e.radius + 0.07:
 				_mine_blast(s)
 				return
 		return
@@ -963,6 +976,10 @@ func _resolve(s: Shot) -> void:
 					at2.y = surface_below(at2 + Vector3(0, 0.3, 0))
 					_blast(at2, WarMath.BOMB_RADIUS * 0.6, WarMath.BOMB_DAMAGE * 0.6, "bomb")
 					Fx.explosion(self, at2 + Vector3(0, 0.02, 0), 0.06)
+			if plane.special == "napalm":
+				var ground := Vector3(at.x, surface_below(at + Vector3(0, 0.2, 0)), at.z)
+				_fire_zones.append({"at": ground, "t": WarMath.NAPALM_SECONDS, "fx": 0.0})
+				cue("flare", ground, 4.0)
 			Fx.mark(self, at, w.get("normal", Vector3.UP), 0.32)
 			cue("boom_big", at)
 			shake(0.6)
@@ -1005,6 +1022,8 @@ func _resolve(s: Shot) -> void:
 		s.dead = true
 		if best_shot:
 			best_shot.dead = true
+			if best_shot.kind == "sam":
+				missiles_beaten += 1
 			Fx.explosion(self, best_shot.global_position, 0.05)
 			cue("boom_small", at)
 			_add_score(60, at)
@@ -1033,7 +1052,11 @@ func _resolve(s: Shot) -> void:
 				_blast(at, s.explosive, s.damage * 0.5, "gun", best_e)
 			if s.incendiary and best_e.alive():
 				best_e.burn_t = WarMath.BURN_SECONDS
-			if best_e.alive() and best_e.damage(s.damage, at):
+			var dmg: float = s.damage * (1.0 if s.explosive > 0.0 else best_e.gun_armor())
+			if best_e.gun_armor() < 1.0 and s.explosive <= 0.0 and randf() < 0.3:
+				Fx.sparks(self, at, (a - b).normalized(), 4, Color(0.9, 0.95, 1.0))
+				cue("clatter", at, -12.0)
+			if best_e.alive() and best_e.damage(dmg, at):
 				_kill(best_e, "gun")
 		return
 	if not w.is_empty():
@@ -1102,6 +1125,28 @@ func lightning(from: Vector3, forward: Vector3) -> bool:
 	return true
 
 
+## Rocket swarm: six mini homing rockets shared between up to three
+## enemies ahead of the nose.
+func swarm(from: Vector3, forward: Vector3, inherit: Vector3) -> int:
+	var cands: Array = []
+	for e in enemies:
+		if e.can_be_locked() and e.alive():
+			var to: Vector3 = e.hit_center() - from
+			if to.length() < 4.5 and forward.dot(to.normalized()) > 0.35:
+				cands.append([to.length(), e])
+	cands.sort_custom(func(x, y): return x[0] < y[0])
+	var targets: Array = cands.slice(0, 3).map(func(c): return c[1])
+	for k in range(WarMath.SWARM_ROCKETS):
+		var tgt = targets[k % targets.size()] if not targets.is_empty() else null
+		var spread := Vector3(randf_range(-0.25, 0.25), randf_range(-0.1, 0.2), 0)
+		var dir: Vector3 = (forward + forward.cross(Vector3.UP).normalized() * spread.x + Vector3(0, spread.y, 0)).normalized()
+		var r := player_fire("rocket", from + Vector3(randf_range(-0.02, 0.02), -0.015, 0), dir, inherit, tgt)
+		r.damage *= WarMath.SWARM_DAMAGE
+		r.scale = Vector3.ONE * 0.7
+	cue("rocket", from, 3.0)
+	return targets.size()
+
+
 ## SAMs near a barrel roll chase the flares instead.
 func flares(at: Vector3) -> void:
 	for k in range(8):
@@ -1110,6 +1155,7 @@ func flares(at: Vector3) -> void:
 	for s in shots:
 		if s.kind == "sam" and s.target == plane and s.global_position.distance_to(at) < WarMath.FLARE_RADIUS:
 			s.target = null
+			missiles_beaten += 1
 			s.velocity = s.velocity.lerp((at + Vector3(0, -0.6, 0) - s.global_position).normalized() * s.velocity.length(), 0.6)
 			_add_score(50, s.global_position)
 
@@ -1149,6 +1195,7 @@ func _resolve_hostile(s: Shot, a: Vector3, b: Vector3) -> void:
 			return
 	if s.kind == "sam" and s.target != null and plane.rolling() and pp.distance_to(b) < 0.45:
 		s.target = null    # a barrel roll at the last moment shakes the missile off
+		missiles_beaten += 1
 		cue("whoosh", b)
 		_add_score(50, b)
 	var fh = _friend_hit(a, b)
@@ -1217,7 +1264,7 @@ func _kill(e: Enemy, weapon: String) -> void:
 		_drop_repair(e.hit_center())
 	if campaign:
 		campaign.on_killed(e)
-	if e.kind in ["fighter", "ace", "transport", "diver"]:
+	if e.kind in ["fighter", "ace", "transport", "diver", "raider", "heli"]:
 		# Shot-down planes spiral to the floor trailing smoke.
 		plane.locks.erase(e)
 		Fx.explosion(self, e.hit_center(), 0.04)
@@ -1238,12 +1285,12 @@ func _explode(e: Enemy) -> void:
 		"balloon":
 			Fx.explosion(self, at, 0.05)
 			cue("pop", at)
-		"fighter", "ace", "diver", "transport":
+		"fighter", "ace", "diver", "transport", "raider", "heli":
 			Fx.explosion(self, at, 0.1)
 			Fx.mark(self, Vector3(at.x, surface_below(at), at.z), Vector3.UP, 0.25)
 			cue("boom_big", at)
 			Debris.from_model(self, e.parts.root, e.velocity * 0.4, at, e.kind)
-		"bomber":
+		"bomber", "gunship":
 			for i in range(5):
 				Fx.explosion(self, at + Vector3(_rng.randf_range(-0.3, 0.3), _rng.randf_range(-0.08, 0.08), _rng.randf_range(-0.3, 0.3)), 0.12)
 			Debris.from_model(self, e.parts.root, e.velocity * 0.3, at, "bomber")
@@ -1288,6 +1335,29 @@ func _add_score(points: int, at: Vector3, big: bool = false) -> void:
 	score += points
 	hud.set_score(score)
 	hud.popup(at, points, big)
+
+
+## Napalm: burning patches on the floor that hurt anything in them.
+func _step_fire_zones(delta: float) -> void:
+	for z in _fire_zones.duplicate():
+		z.t -= delta
+		z.fx -= delta
+		var at: Vector3 = z.at
+		if z.fx <= 0.0:
+			z.fx = 0.08
+			var a := randf() * TAU
+			var r := sqrt(randf()) * WarMath.NAPALM_RADIUS
+			Fx.flame(self, at + Vector3(cos(a) * r, 0.01, sin(a) * r), randf_range(0.02, 0.04))
+		for e in enemies.duplicate():
+			if not e.alive():
+				continue
+			var c: Vector3 = e.hit_center()
+			if Vector2(c.x - at.x, c.z - at.z).length() < WarMath.NAPALM_RADIUS + e.radius * 0.5 and c.y - at.y < 0.35:
+				e.burn_t = maxf(e.burn_t, 1.0)
+				if e.damage(WarMath.NAPALM_DPS * delta, Vector3.INF):
+					_kill(e, "bomb")
+		if z.t <= 0.0:
+			_fire_zones.erase(z)
 
 
 func _step_burns(delta: float) -> void:
@@ -1460,6 +1530,7 @@ func _clear_battlefield() -> void:
 			f.queue_free()
 	friends.clear()
 	Debris.clear_all()
+	_fire_zones.clear()
 	_callout_t = 0.0
 	for s in shots:
 		s.queue_free()

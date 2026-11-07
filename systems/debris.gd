@@ -164,10 +164,13 @@ const PART_COLORS := {
 	"cargo": [Color(0.86, 0.84, 0.76), Color(0.86, 0.14, 0.10)],
 	"transport": [Color(0.58, 0.52, 0.38), Color(0.16, 0.16, 0.17)],
 	"bomber": [Color(0.33, 0.37, 0.44), Color(0.16, 0.16, 0.17)],
+	"gunship": [Color(0.18, 0.19, 0.21), Color(1.0, 0.5, 0.1)],
+	"raider": [Color(0.24, 0.26, 0.29), Color(1.0, 0.5, 0.1)],
+	"heli": [Color(0.36, 0.42, 0.28), Color(0.16, 0.16, 0.17)],
 }
 static func plane_parts(w: Node3D, xf: Transform3D, velocity: Vector3, kind: String) -> void:
 	var cols: Array = PART_COLORS.get(kind, PART_COLORS.fighter)
-	var k: float = {"bomber": 2.2, "transport": 1.5, "cargo": 1.5}.get(kind, 1.0)
+	var k: float = {"bomber": 2.2, "gunship": 2.2, "transport": 1.5, "cargo": 1.5, "raider": 1.15}.get(kind, 1.0)
 	var body := Toon.mat(cols[0], 0.4, 0.0015)
 	var trim := Toon.mat(cols[1], 0.4, 0.0015)
 	var wing := PackedVector2Array([Vector2(0.0, -0.03), Vector2(0.13, -0.02), Vector2(0.14, 0.0), Vector2(0.13, 0.018), Vector2(0.0, 0.025)])

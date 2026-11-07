@@ -190,33 +190,33 @@ func _next_mission() -> int:
 
 
 func _missions() -> void:
-	var p := _new(1.0, 0.68, Lang.t("campaign"))
+	var p := _new(1.0, 0.86, Lang.t("campaign"))
 	var ids := Missions.ids()
 	for i in range(Missions.LIST.size()):
 		var m: Dictionary = Missions.LIST[i]
 		var col := i % 4
 		var row := i / 4
-		var c := Vector2(p.sx(-0.351 + col * 0.234), 0.11 - row * 0.235)
+		var c := Vector2(p.sx(-0.351 + col * 0.234), 0.2 - row * 0.178)
 		var open_ok := Profile.unlocked(i, ids)
 		var idx := i
-		var w := p.button("", c, Vector2(0.218, 0.215), func(): open("brief", {"index": idx}), "normal", "", 40, open_ok)
+		var w := p.button("", c, Vector2(0.218, 0.165), func(): open("brief", {"index": idx}), "normal", "", 40, open_ok)
 		var node: Node3D = w.node
 		w.hint = Missions.text(m, "title") if open_ok else Lang.t("locked_hint")
-		p.label(str(i + 1), Vector2(p.sx(-0.08), 0.075), 70, Panel3D.GOLD if open_ok else Panel3D.DIM, "title", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
+		p.label(str(i + 1), Vector2(p.sx(-0.082), 0.052), 58, Panel3D.GOLD if open_ok else Panel3D.DIM, "title", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
 		if open_ok:
-			p.icon(m.icon, Vector2(0, 0.04), 0.06, Panel3D.TEXT, node)
-			p.label(Missions.text(m, "title"), Vector2(0, -0.03), 46, Panel3D.TEXT, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
+			p.icon(m.icon, Vector2(0, 0.03), 0.046, Panel3D.TEXT, node)
+			p.label(Missions.text(m, "title"), Vector2(0, -0.022), 42, Panel3D.TEXT, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
 			var n := Profile.stars_of(m.id)
 			for k in range(3):
-				p.icon("star", Vector2((k - 1) * 0.03, -0.075), 0.026, Panel3D.GOLD if k < n else Color(0.3, 0.33, 0.38), node)
+				p.icon("star", Vector2((k - 1) * 0.026, -0.058), 0.022, Panel3D.GOLD if k < n else Color(0.3, 0.33, 0.38), node)
 			if m.get("dusk", false):
-				p.label("☾", Vector2(p.sx(0.08), 0.075), 50, Panel3D.DIM, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
+				p.label("☾", Vector2(p.sx(0.08), 0.055), 44, Panel3D.DIM, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
 		else:
-			p.icon("lock", Vector2(0, 0.01), 0.07, Panel3D.DIM, node)
-			p.label(Lang.t("locked"), Vector2(0, -0.06), 40, Panel3D.DIM, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
-	p.button(Lang.t("back"), Vector2(p.sx(-0.38), -0.29), Vector2(0.18, 0.06), func(): open("main"), "ghost", "back", 44)
-	_wallet(p, Vector2(p.sx(0.3), -0.29))
-	_hint = p.label("", Vector2(0, -0.29), 42, Panel3D.DIM)
+			p.icon("lock", Vector2(0, 0.012), 0.05, Panel3D.DIM, node)
+			p.label(Lang.t("locked"), Vector2(0, -0.045), 38, Panel3D.DIM, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
+	p.button(Lang.t("back"), Vector2(p.sx(-0.38), -0.375), Vector2(0.18, 0.06), func(): open("main"), "ghost", "back", 44)
+	_wallet(p, Vector2(p.sx(0.3), -0.375))
+	_hint = p.label("", Vector2(0, -0.375), 42, Panel3D.DIM)
 
 
 func _brief(i: int) -> void:
@@ -292,13 +292,15 @@ func _hangar(tab: String) -> void:
 			p.divider(y - 0.048, 0.94)
 			y -= 0.097
 	else:
-		p.label(Lang.t("gun_slot"), Vector2(p.sx(-0.47), 0.145), 44, Panel3D.GOLD, "bold", p.start_align(), 0.5)
+		p.label(Lang.t("gun_slot"), Vector2(p.sx(-0.47), 0.16), 42, Panel3D.GOLD, "bold", p.start_align(), 0.5)
 		for k in range(Profile.GUNS.size()):
-			_item_card(p, Profile.GUNS[k], Vector2(p.sx(-0.32 + k * 0.32), 0.075), Vector2(0.3, 0.1))
-		p.label(Lang.t("special_slot"), Vector2(p.sx(-0.47), -0.015), 44, Panel3D.GOLD, "bold", p.start_align(), 0.5)
+			_item_card(p, Profile.GUNS[k], Vector2(p.sx(-0.354 + k * 0.236), 0.1), Vector2(0.226, 0.085))
+		p.label(Lang.t("special_slot"), Vector2(p.sx(-0.47), 0.035), 42, Panel3D.GOLD, "bold", p.start_align(), 0.5)
 		var items := Profile.SPECIALS + ["flares"]
 		for k in range(items.size()):
-			_item_card(p, items[k], Vector2(p.sx(-0.384 + k * 0.192), -0.1), Vector2(0.182, 0.13))
+			var row := k / 4
+			var col := k % 4
+			_item_card(p, items[k], Vector2(p.sx(-0.354 + col * 0.236), -0.025 - row * 0.095), Vector2(0.226, 0.085))
 	var back_to := str(args.get("back", ""))
 	var idx := int(args.get("index", 0))
 	p.button(Lang.t("back"), Vector2(p.sx(-0.4), -0.315), Vector2(0.18, 0.06), func(): open("brief", {"index": idx}) if back_to == "brief" else open(back_to if back_to != "" else "main", {}, true), "ghost", "back", 44)
@@ -326,7 +328,7 @@ func _item_card(p: Panel3D, item: String, c: Vector2, s: Vector2) -> void:
 func _buy(item: String) -> void:
 	if Profile.buy(item):
 		if battle:
-			battle.cue("coin", panel.global_position, 3.0)
+			battle.cue("coin", panel.global_position if is_open() else battle.head_position(), 3.0)
 	refresh()
 
 
@@ -336,7 +338,7 @@ func _buy_or_equip(item: String) -> void:
 	elif not Profile.buy(item):
 		return
 	elif battle:
-		battle.cue("coin", panel.global_position, 3.0)
+		battle.cue("coin", panel.global_position if is_open() else battle.head_position(), 3.0)
 	refresh()
 
 
