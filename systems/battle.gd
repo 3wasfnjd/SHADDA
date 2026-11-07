@@ -199,6 +199,15 @@ func cue(name: String, at: Vector3, db: float = 0.0) -> void:
 
 
 ## No camera shake in mixed reality (nausea) — rumble the hands instead.
+## A short slow-motion beat for the big kills (real seconds; skipped headless).
+func slowmo(seconds: float, rate: float = 0.3) -> void:
+	if DisplayServer.get_name() == "headless" or not is_inside_tree():
+		return
+	Engine.time_scale = rate
+	var t := get_tree().create_timer(seconds, true, false, true)
+	t.timeout.connect(func(): Engine.time_scale = 1.0)
+
+
 func shake(amount: float) -> void:
 	for h in hands:
 		if h and h.get_is_active():
@@ -356,6 +365,7 @@ func restart_mission() -> void:
 
 
 func quit_to_menu() -> void:
+	Engine.time_scale = 1.0
 	if paused:
 		_unpause()
 	_set_phase(Phase.MENU)
@@ -1364,6 +1374,7 @@ func _explode(e: Enemy) -> void:
 			Fx.explosion(self, at, 0.25)
 			cue("boom_big", at, 6.0)
 			shake(1.0)
+			slowmo(0.55)
 		"tank", "aa", "truck", "sam":
 			Fx.explosion(self, at, 0.1 if e.kind != "sam" else 0.07)
 			Fx.mark(self, Vector3(at.x, surface_below(at), at.z), Vector3.UP, 0.3)

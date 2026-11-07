@@ -76,6 +76,7 @@ var _crash_fwd: Vector3 = Vector3.FORWARD
 var _crash_speed: float = 0.0
 var _stall_beep: float = 0.0
 var _shadow: MeshInstance3D
+var _sil: MeshInstance3D        # the plane's own silhouette flattened on the floor
 var _engine: AudioStreamPlayer3D
 var _sight: MeshInstance3D
 
@@ -87,6 +88,26 @@ func _ready() -> void:
 	add_child(model.root)
 	_shadow = Toon.shadow_blob(0.22)
 	add_child(_shadow)
+	var body = model.get("body")
+	if body is MeshInstance3D and (body as MeshInstance3D).mesh:
+		_sil = MeshInstance3D.new()
+		_sil.mesh = (body as MeshInstance3D).mesh
+		var sm := StandardMaterial3D.new()
+		sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		sm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		sm.albedo_color = Color(0.02, 0.02, 0.04, 0.45)
+		sm.render_priority = -49
+		# Each floor pixel is darkened once, however many triangles overlap.
+		sm.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM
+		sm.stencil_flags = BaseMaterial3D.STENCIL_FLAG_READ | BaseMaterial3D.STENCIL_FLAG_WRITE
+		sm.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_NOT_EQUAL
+		sm.stencil_reference = 7
+		_sil.material_override = sm
+		_sil.top_level = true
+		_sil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_sil.extra_cull_margin = 2.0
+		add_child(_sil)
 	# Gun sight: a small ring 0.9 m ahead of the nose.
 	_sight = Toon.add(self, Toon.torus(0.02, 0.0016, 24), Toon.flat(Color(1.0, 0.95, 0.5, 0.9)))
 	_sight.top_level = true
@@ -363,7 +384,15 @@ func _animate(delta: float) -> void:
 	_shadow.visible = state != State.WRECKED
 	_shadow.global_position = Vector3(global_position.x, under + 0.003, global_position.z)
 	_shadow.scale = Vector3.ONE * clampf(1.0 - h * 0.25, 0.45, 1.0)
-	(_shadow.material_override as StandardMaterial3D).albedo_color.a = clampf(0.55 - h * 0.18, 0.12, 0.55)
+	(_shadow.material_override as StandardMaterial3D).albedo_color.a = clampf(0.55 - h * 0.18, 0.12, 0.55) * (0.45 if _sil else 1.0)
+	if _sil:
+		# Sun straight above: squash the body onto the floor under the plane.
+		_sil.visible = _shadow.visible and h < 2.4
+		if _sil.visible:
+			var bx := (model.body as MeshInstance3D).global_transform
+			var flat := Basis(Vector3(1, 0, 0), Vector3(0, 0.002, 0), Vector3(0, 0, 1)) * bx.basis
+			_sil.global_transform = Transform3D(flat, Vector3(bx.origin.x, under + 0.004, bx.origin.z))
+			(_sil.material_override as StandardMaterial3D).albedo_color.a = clampf(0.5 - h * 0.2, 0.06, 0.5)
 	_sight.visible = airborne()
 	if _sight.visible:
 		var hot := aim_assist and battle != null and _assist_point() != Vector3.INF
@@ -721,6 +750,8 @@ func _break_apart() -> void:
 	Debris.from_model(battle, model.root, velocity * 0.6, at, "player")
 	(model.root as Node3D).visible = false
 	_shadow.visible = false
+	if _sil:
+		_sil.visible = false
 	Debris.eject(battle, (model.pilot.root as Node3D).global_position, velocity * 0.3)
 	battle.on_plane_destroyed()
 
