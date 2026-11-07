@@ -663,10 +663,10 @@ func _show_card(badge: String, title: String, line: String, seconds: float) -> v
 	f = f.normalized() if f.length() > 0.01 else fwd
 	_card.global_position = hp + f * 1.3 + Vector3(0, 0.12, 0)
 	_card.global_basis = Basis.looking_at(f, Vector3.UP)
-	# Same family as the menu posters: cream edge, olive card, red ribbon tag.
-	Panel3D.shape(_card, Panel3D.rrect(0.636, 0.316, 0.034), Vector3(0, 0.03, -0.012), Color(0.95, 0.9, 0.78), 0.002)
-	Panel3D.shape(_card, Panel3D.rrect(0.62, 0.3, 0.03), Vector3(0, 0.03, -0.01), Color(0.17, 0.2, 0.13, 0.95), 0.002)
-	Panel3D.shape(_card, Panel3D.tag(0.3, 0.062), Vector3(0, 0.14, -0.004), Panel3D.HEADER, 0.002)
+	# Same family as the menus: dark slab with cut corners, slanted red tab.
+	Panel3D.shape(_card, Panel3D.tag(0.632, 0.312, 0.04), Vector3(0, 0.03, -0.012), Color(0.03, 0.035, 0.05), 0.002)
+	Panel3D.shape(_card, Panel3D.tag(0.62, 0.3, 0.036), Vector3(0, 0.03, -0.01), Color(0.085, 0.1, 0.14, 0.95), 0.002)
+	Panel3D.shape(_card, Panel3D.skew(0.32, 0.062, 0.028), Vector3(0, 0.14, -0.004), Color(0.93, 0.2, 0.22), 0.002)
 	var b := UI.number("%s %s" % [Lang.t("mission"), badge], 70, Color(0.98, 0.95, 0.86), false)
 	b.font = UI.font("title")
 	b.pixel_size = 0.00055

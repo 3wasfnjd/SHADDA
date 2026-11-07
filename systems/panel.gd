@@ -22,9 +22,12 @@ const DARK_TEXT := Color(0.12, 0.09, 0.06)
 const PX := 0.00046       # metres per font pixel (48 px ≈ 2.2 cm, ≈1.3° at 1 m)
 
 const STYLES := {
-	"poster": {"bg": Color(0.95, 0.9, 0.78), "edge": Color(0.2, 0.24, 0.16), "inset": Color(0.88, 0.82, 0.68), "ink": Color(0.2, 0.14, 0.09), "dim": Color(0.48, 0.42, 0.34), "accent": Color(0.72, 0.14, 0.1), "star": Color(0.95, 0.62, 0.06), "btn": Color(0.3, 0.36, 0.22), "line": Color(0.72, 0.14, 0.1, 0.45)},
-	"map": {"bg": Color(0.87, 0.8, 0.62), "edge": Color(0.32, 0.25, 0.16), "inset": Color(0.8, 0.72, 0.55), "ink": Color(0.22, 0.15, 0.08), "dim": Color(0.48, 0.4, 0.28), "accent": Color(0.72, 0.14, 0.1), "star": Color(0.95, 0.62, 0.06), "btn": Color(0.3, 0.36, 0.22), "line": Color(0.45, 0.36, 0.22, 0.35)},
-	"blueprint": {"bg": Color(0.13, 0.3, 0.55), "edge": Color(0.9, 0.93, 0.98), "inset": Color(0.1, 0.24, 0.46), "ink": Color(0.96, 0.98, 1.0), "dim": Color(0.72, 0.82, 0.94), "accent": Color(1.0, 0.8, 0.3), "star": Color(1.0, 0.8, 0.3), "btn": Color(0.08, 0.17, 0.34), "line": Color(0.45, 0.62, 0.86, 0.45)},
+	# SAQR's own "strike" look: dark gunmetal board, slanted tabs, red accent.
+	"strike": {"bg": Color(0.085, 0.1, 0.14), "edge": Color(0.03, 0.035, 0.05), "inset": Color(0.12, 0.145, 0.19), "ink": Color(0.96, 0.97, 0.99), "dim": Color(0.6, 0.65, 0.73), "accent": Color(0.93, 0.2, 0.22), "star": Color(1.0, 0.76, 0.16), "btn": Color(0.17, 0.2, 0.26), "line": Color(0.32, 0.38, 0.48, 0.6), "hover": Color(0.93, 0.2, 0.22), "sel": Color(0.93, 0.2, 0.22), "dark_sel": false},
+	"poster": {"bg": Color(0.95, 0.9, 0.78), "edge": Color(0.2, 0.24, 0.16), "inset": Color(0.88, 0.82, 0.68), "ink": Color(0.2, 0.14, 0.09), "dim": Color(0.48, 0.42, 0.34), "accent": Color(0.72, 0.14, 0.1), "star": Color(0.95, 0.62, 0.06), "btn": Color(0.3, 0.36, 0.22), "line": Color(0.72, 0.14, 0.1, 0.45), "hover": Color(1.0, 0.72, 0.18), "sel": Color(1.0, 0.72, 0.18), "dark_sel": true},
+	# Campaign: a dark sea chart with islands, same family as "strike".
+	"map": {"bg": Color(0.05, 0.17, 0.23), "edge": Color(0.03, 0.035, 0.05), "inset": Color(0.07, 0.22, 0.28), "ink": Color(0.96, 0.98, 1.0), "dim": Color(0.58, 0.76, 0.8), "accent": Color(0.95, 0.24, 0.24), "star": Color(1.0, 0.76, 0.16), "btn": Color(0.13, 0.17, 0.23), "line": Color(0.3, 0.55, 0.62, 0.5), "hover": Color(0.93, 0.2, 0.22), "sel": Color(0.93, 0.2, 0.22), "dark_sel": false},
+	"blueprint": {"bg": Color(0.07, 0.17, 0.32), "edge": Color(0.03, 0.035, 0.05), "inset": Color(0.09, 0.21, 0.38), "ink": Color(0.96, 0.98, 1.0), "dim": Color(0.72, 0.82, 0.94), "accent": Color(1.0, 0.8, 0.3), "star": Color(1.0, 0.8, 0.3), "btn": Color(0.12, 0.22, 0.4), "line": Color(0.35, 0.52, 0.78, 0.45), "hover": Color(0.93, 0.2, 0.22), "sel": Color(0.93, 0.2, 0.22), "dark_sel": false},
 }
 
 var size: Vector2 = Vector2(0.8, 0.55)
@@ -33,8 +36,10 @@ var hovered: Dictionary = {}
 var dragging: Dictionary = {}
 var open_t: float = 0.0
 var rtl: bool = true
-var style: String = "poster"
-var pal: Dictionary = STYLES.poster
+var style: String = "strike"
+var pal: Dictionary = STYLES.strike
+var numbered: bool = false      # list buttons get 01 / 02 / 03 tabs
+var _num: int = 0
 var ink: Color = STYLES.poster.ink
 var dim: Color = STYLES.poster.dim
 var accent: Color = STYLES.poster.accent
@@ -43,16 +48,29 @@ var _press_lock: float = 0.25
 var anims: Array = []          # {node, kind: "pulse"|"orbit", ...}
 
 
-func setup(w: float, h: float, title: String = "", header: Color = HEADER, board_style: String = "poster") -> Panel3D:
+func setup(w: float, h: float, title: String = "", header: Color = HEADER, board_style: String = "strike") -> Panel3D:
 	size = Vector2(w, h)
 	style = board_style
-	pal = STYLES.get(style, STYLES.poster)
+	pal = STYLES.get(style, STYLES.strike)
 	ink = pal.ink
 	dim = pal.dim
 	accent = pal.accent
 	inset = pal.inset
 	rtl = Lang.code() == "ar"
 	scale = Vector3.ONE * 0.92
+	if style in ["strike", "map", "blueprint"]:
+		_strike_board(w, h, title, header)
+		if style == "blueprint":
+			_grid(w, h, 0.045)
+		if style == "map":
+			_grid(w, h, 0.07)
+			for blob in [[Vector2(-0.3, -0.2), 0.12], [Vector2(0.28, 0.12), 0.09], [Vector2(0.05, -0.28), 0.07], [Vector2(-0.12, 0.18), 0.06]]:
+				var pts := PackedVector2Array()
+				for i in range(16):
+					var a := TAU * i / 16.0
+					pts.append(Vector2(cos(a), sin(a) * 0.65) * float(blob[1]) * (0.8 + 0.25 * sin(a * 3.0 + blob[1] * 40.0)))
+				shape(self, pts, Vector3(blob[0].x * w, blob[0].y * h, 0.0002), Color(0.1, 0.32, 0.36), 0.0004)
+		return self
 	# Soft drop shadow, frame, paper.
 	shape(self, rrect(w + 0.02, h + 0.02, 0.03), Vector3(0.012, -0.016, -0.012), Color(0, 0, 0, 0.32), 0.001)
 	shape(self, rrect(w + 0.016, h + 0.016, 0.026), Vector3(0, 0, -0.004), pal.edge, 0.002)
@@ -78,6 +96,35 @@ func setup(w: float, h: float, title: String = "", header: Color = HEADER, board
 	if title != "":
 		_ribbon(title, h * 0.5 - 0.055, minf(w * 0.7, 0.62), header)
 	return self
+
+
+## The "strike" board: a dark slab with cut corners, a red edge stripe on
+## the start side, hatch marks in the far corner and a slanted title with a
+## skewed red underline.
+func _strike_board(w: float, h: float, title: String, header: Color) -> void:
+	shape(self, tag(w + 0.02, h + 0.02, 0.045), Vector3(0.014, -0.018, -0.012), Color(0, 0, 0, 0.35), 0.001)
+	shape(self, tag(w + 0.012, h + 0.012, 0.042), Vector3(0, 0, -0.004), pal.edge, 0.002)
+	shape(self, tag(w, h, 0.038), Vector3(0, 0, -0.002), pal.bg, 0.002)
+	var red: Color = header if header != HEADER else pal.accent
+	# Edge stripe on the reading-start side.
+	shape(self, skew(0.01, h * 0.55, 0.0), Vector3(sx(-w * 0.5 + 0.006), h * 0.08, 0.0004), red, 0.0006)
+	# Hatch marks, bottom corner on the far side.
+	for i in range(6):
+		var x0 := w * 0.5 - 0.03 - i * 0.022
+		shape(self, bar(Vector2(sx(x0), -h * 0.5 + 0.012), Vector2(sx(x0 + 0.022), -h * 0.5 + 0.042), 0.006), Vector3(0, 0, 0.0004), fade(pal.line, 0.55), 0.0004)
+	if title != "":
+		var ty := h * 0.5 - 0.06
+		var lt := label(title, Vector2(0, ty), 84, pal.ink, "title")
+		lt.position.z = 0.006
+		lt.rotation.z = 0.035 if not rtl else -0.035
+		var uw := minf(w * 0.6, 0.12 + title.length() * 0.022)
+		shape(self, skew(uw, 0.01, 0.012), Vector3(0, ty - 0.048, 0.001), red, 0.0008)
+		shape(self, skew(0.03, 0.01, 0.012), Vector3(uw * 0.5 + 0.03, ty - 0.048, 0.001), fade(red, 0.5), 0.0008)
+
+
+## Parallelogram leaning forward by `lean` (top edge shifted right).
+static func skew(w: float, h: float, lean: float) -> PackedVector2Array:
+	return PackedVector2Array([Vector2(-w * 0.5 - lean * 0.5, -h * 0.5), Vector2(w * 0.5 - lean * 0.5, -h * 0.5), Vector2(w * 0.5 + lean * 0.5, h * 0.5), Vector2(-w * 0.5 + lean * 0.5, h * 0.5)])
 
 
 ## A colour mixed into the paper (opaque — see-through bits show the room).
@@ -206,14 +253,18 @@ func _process(delta: float) -> void:
 			var target := 1.0 if (hovered == w and w.enabled) else 0.0
 			w.hover = move_toward(w.hover, target, delta * 8.0)
 			var base: Color = w.color
-			var c := base.lerp(BTN_HOVER, w.hover * (0.0 if w.selected else 1.0)) if w.enabled else (DISABLED if style != "blueprint" else Color(0.2, 0.3, 0.45))
+			var hov: Color = pal.hover if base != pal.hover else Color(pal.hover).lightened(0.25)
+			var c := base.lerp(hov, w.hover * (0.0 if w.selected else 1.0)) if w.enabled else (DISABLED if not style in ["blueprint", "strike", "map"] else Color(pal.btn).lerp(pal.bg, 0.5))
+			if w.get("chev"):
+				(w.chev as Node3D).scale = Vector3.ONE * maxf(0.001, w.hover)
+				(w.chev as Node3D).position.x = sx(-(w.rect as Rect2).size.x * 0.5 - 0.02 - 0.012 * w.hover)
 			(w.mat as ShaderMaterial).set_shader_parameter("albedo", c)
 			(w.node as Node3D).scale = Vector3.ONE * (1.0 + w.hover * 0.04 - w.get("press", 0.0) * 0.05)
 			# Tags lift toward you when pointed at.
 			(w.node as Node3D).position.z = 0.002 + w.hover * 0.01 - w.get("press", 0.0) * 0.006
 			w.press = maxf(0.0, w.get("press", 0.0) - delta * 5.0)
 			if w.label:
-				var dark: bool = (w.hover > 0.5 and not w.selected) or w.selected
+				var dark: bool = ((w.hover > 0.5 and not w.selected) or w.selected) and bool(pal.get("dark_sel", true))
 				(w.label as Label3D).modulate = DARK_TEXT if dark and w.enabled else (TEXT if w.enabled else Color(0.4, 0.38, 0.34))
 				(w.label as Label3D).outline_size = 0 if dark else 6
 
@@ -314,8 +365,8 @@ func divider(y: float, w: float = -1.0) -> void:
 
 
 ## Clipped-corner tag outline.
-static func tag(w: float, h: float) -> PackedVector2Array:
-	var c := minf(0.016, h * 0.28)
+static func tag(w: float, h: float, corner: float = -1.0) -> PackedVector2Array:
+	var c := minf(0.016, h * 0.28) if corner < 0.0 else corner
 	return PackedVector2Array([Vector2(-w * 0.5 + c, -h * 0.5), Vector2(w * 0.5 - c, -h * 0.5), Vector2(w * 0.5, -h * 0.5 + c), Vector2(w * 0.5, h * 0.5 - c), Vector2(w * 0.5 - c, h * 0.5), Vector2(-w * 0.5 + c, h * 0.5), Vector2(-w * 0.5, h * 0.5 - c), Vector2(-w * 0.5, -h * 0.5 + c)])
 
 
@@ -325,16 +376,18 @@ func button(text: String, center: Vector2, bsize: Vector2, action: Callable, sty
 	var node := Node3D.new()
 	node.position = Vector3(center.x, center.y, 0.002)
 	add_child(node)
-	var color: Color = PRIMARY if style == "primary" else (Color(pal.btn).lerp(pal.edge, 0.35) if style == "ghost" else pal.btn)
+	var strike: bool = self.style in ["strike", "map", "blueprint"]
+	var color: Color = (pal.hover if strike else PRIMARY) if style == "primary" else (Color(pal.btn).lerp(pal.edge, 0.35) if style == "ghost" else pal.btn)
 	# A stencilled dog-tag: clipped corners, a printed shadow under it.
-	var outline := tag(bsize.x, bsize.y)
+	# On dark boards: a slanted tab.
+	var outline := tag(bsize.x, bsize.y) if not strike else skew(bsize.x, bsize.y, minf(bsize.y * 0.45, 0.03))
 	if style == "pin":
 		color = pal.btn
 		outline = rrect(bsize.x, bsize.y, bsize.x * 0.5, 7)
-		shape(node, rrect(bsize.x + 0.012, bsize.y + 0.012, bsize.x * 0.5 + 0.006, 7), Vector3(0, 0, -0.001), Color(0.98, 0.94, 0.84), 0.003)
+		shape(node, rrect(bsize.x + 0.012, bsize.y + 0.012, bsize.x * 0.5 + 0.006, 7), Vector3(0, 0, -0.001), pal.ink if self.style != "poster" else Color(0.98, 0.94, 0.84), 0.003)
 	shape(node, outline, Vector3(0.004, -0.005, -0.001), Color(pal.bg).darkened(0.3), 0.001)
 	var mi := shape(node, outline, Vector3.ZERO, color, 0.004)
-	if style != "pin" and (style == "primary" or bsize.y >= 0.07):
+	if style != "pin" and not strike and (style == "primary" or bsize.y >= 0.07):
 		# Rivet dots at the two ends.
 		for e: float in [-1.0, 1.0]:
 			if icon_kind == "" or e > 0 != rtl:
@@ -342,6 +395,20 @@ func button(text: String, center: Vector2, bsize: Vector2, action: Callable, sty
 	var mat := mi.material_override as ShaderMaterial
 	var l: Label3D = null
 	var tx := 0.0
+	var chev: Node3D = null
+	if strike and style != "pin" and bsize.x > 0.2:
+		# A chevron that slides in at the start side when pointed at.
+		chev = Node3D.new()
+		chev.position = Vector3(sx(-bsize.x * 0.5 - 0.03), 0, 0.002)
+		node.add_child(chev)
+		var d := -1.0 if rtl else 1.0
+		shape(chev, PackedVector2Array([Vector2(-0.008 * d, 0.018), Vector2(0.012 * d, 0.0), Vector2(-0.008 * d, -0.018), Vector2(-0.002 * d, 0.0)]), Vector3.ZERO, pal.accent, 0.002)
+		chev.scale = Vector3.ONE * 0.001
+		if numbered and style != "ghost":
+			_num += 1
+			var nl := label("%02d" % _num, Vector2(sx(-bsize.x * 0.5 + 0.04), 0.0), 34, Color(1, 1, 1, 0.55), "title", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
+			nl.position.z = 0.006
+			shape(node, skew(0.003, bsize.y * 0.55, 0.01), Vector3(sx(-bsize.x * 0.5 + 0.068), 0, 0.0025), Color(1, 1, 1, 0.3), 0.0005)
 	if icon_kind != "":
 		var ix := sx(-bsize.x * 0.5 + bsize.y * 0.5) if text != "" else 0.0
 		icon(icon_kind, Vector2(ix, 0), bsize.y * 0.5, TEXT if enabled else DIM, node)
@@ -349,7 +416,7 @@ func button(text: String, center: Vector2, bsize: Vector2, action: Callable, sty
 	if text != "":
 		l = label(text, Vector2(tx, 0.002), px, TEXT, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
 		l.position.z = 0.006
-	var w := {"kind": "button", "rect": Rect2(center - bsize * 0.5, bsize), "node": node, "mat": mat, "color": color, "hover": 0.0, "action": action, "enabled": enabled, "label": l, "selected": false, "press": 0.0}
+	var w := {"kind": "button", "rect": Rect2(center - bsize * 0.5, bsize), "node": node, "mat": mat, "color": color, "hover": 0.0, "action": action, "enabled": enabled, "label": l, "selected": false, "press": 0.0, "chev": chev}
 	widgets.append(w)
 	return w
 
@@ -366,7 +433,7 @@ func choice(center: Vector2, csize: Vector2, options: Array, current, on_pick: C
 		var w := button(str(options[i][1]), Vector2(x, center.y), Vector2(bw, csize.y), func(): on_pick.call(val), "normal", "", px)
 		if val == current:
 			w.selected = true
-			w.color = BTN_HOVER
+			w.color = pal.sel
 
 
 ## A 0…1 slider; `on_change(value)` fires while dragging and on release.
@@ -375,7 +442,7 @@ func slider(center: Vector2, ssize: Vector2, value: float, on_change: Callable) 
 	node.position = Vector3(center.x, center.y, 0.002)
 	add_child(node)
 	shape(node, rrect(ssize.x, 0.014, 0.007), Vector3.ZERO, fade(pal.dim, 0.5), 0.003)
-	var fill := shape(node, rrect(ssize.x, 0.014, 0.007), Vector3(0, 0, 0.001), BTN_HOVER, 0.003)
+	var fill := shape(node, rrect(ssize.x, 0.014, 0.007), Vector3(0, 0, 0.001), pal.sel, 0.003)
 	var knob := Toon.add(node, Toon.can(0.018, 0.018, 0.012, 20), Toon.mat(EDGE, 0.5, 0.0012), Vector3.ZERO, Vector3(90, 0, 0))
 	var val_l := label("", Vector2(sx(ssize.x * 0.5 + 0.045), 0), 44, ink, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
 	var w := {"kind": "slider", "rect": Rect2(center - Vector2(ssize.x * 0.5 + 0.02, 0.03), Vector2(ssize.x + 0.04, 0.06)), "width": ssize.x, "node": node, "fill": fill, "knob": knob, "value": value, "action": on_change, "enabled": true, "label": val_l}

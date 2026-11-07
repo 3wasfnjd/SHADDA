@@ -147,7 +147,7 @@ func _tick_haptic(amp: float, dur: float) -> void:
 		hand.trigger_haptic_pulse("haptic", 0.0, amp, dur, 0.0)
 
 
-func _new(w: float, h: float, title: String = "", header: Color = Panel3D.HEADER, style: String = "poster") -> Panel3D:
+func _new(w: float, h: float, title: String = "", header: Color = Panel3D.HEADER, style: String = "strike") -> Panel3D:
 	panel = Panel3D.new()
 	add_child(panel)
 	panel.setup(w, h, title, header, style)
@@ -164,29 +164,33 @@ func _wallet(p: Panel3D, pos: Vector2) -> void:
 # --- screens --------------------------------------------------------------------------------
 
 func _main() -> void:
-	var p := _new(0.76, 0.78)
-	p.sunburst(Vector2(0, 0.25), 0.5, 22, 0.09)
-	# Shadowed poster title.
-	var sh := p.label(Lang.t("game"), Vector2(0.006, 0.244), 300, Color(0.2, 0.24, 0.16, 0.85), "title")
-	sh.position.z = 0.002
-	p.label(Lang.t("game"), Vector2(0, 0.25), 300, Panel3D.HEADER, "title")
-	p.label("—  %s  —" % ("SAQR" if Lang.code() == "ar" else "صقر"), Vector2(0, 0.15), 52, p.ink, "title")
-	p.label(Lang.t("tagline"), Vector2(0, 0.11), 42, p.dim)
+	var p := _new(0.78, 0.8)
+	# Big slanted title with a red shadow, a skewed red bar and the tagline.
+	var tilt := 0.06 if Lang.code() != "ar" else -0.06
+	var sh := p.label(Lang.t("game"), Vector2(0.007, 0.236), 290, Color(0.75, 0.12, 0.14), "title")
+	sh.position.z = 0.003
+	sh.rotation.z = tilt
+	var t := p.label(Lang.t("game"), Vector2(0, 0.243), 290, p.ink, "title")
+	t.rotation.z = tilt
+	Panel3D.shape(p, Panel3D.skew(0.36, 0.012, 0.014), Vector3(0, 0.148, 0.001), p.accent, 0.0008)
+	p.label(("SAQR" if Lang.code() == "ar" else "صقر") + "  ·  " + Lang.t("tagline"), Vector2(0, 0.118), 40, p.dim, "bold")
 	var mini := Models.player_plane(0.0012)
 	var model: Node3D = mini.root
 	model.scale = Vector3.ONE * 0.42
 	model.set_meta("prop", mini.prop)
 	p.orbit(model, Vector3(0, 0.25, 0.09), Vector2(0.3, 0.07))
-	var y := 0.045
-	var bs := Vector2(0.46, 0.066)
+	p.numbered = true
+	var y := 0.05
+	var bs := Vector2(0.5, 0.068)
 	var nxt := _next_mission()
-	var fly := p.button("%s  ·  %d" % [Lang.t("fly"), nxt + 1], Vector2(0, y), Vector2(0.5, 0.078), func(): _start(nxt), "primary", "play", 60)
+	var fly := p.button("%s  ·  %d" % [Lang.t("fly"), nxt + 1], Vector2(0, y), Vector2(0.54, 0.08), func(): _start(nxt), "primary", "", 60)
 	fly.hint = Missions.text(Missions.get_m(nxt), "title")
-	p.button(Lang.t("missions_map"), Vector2(0, y - 0.088), bs, func(): open("missions"), "normal", "rings")
-	p.button(Lang.t("hangar"), Vector2(0, y - 0.164), bs, func(): open("hangar"), "normal", "plane")
-	p.button(Lang.t("settings"), Vector2(0, y - 0.24), bs, func(): open("settings"), "normal", "gear")
-	p.button(Lang.t("controls"), Vector2(0, y - 0.31), Vector2(0.46, 0.054), func(): open("controls"), "ghost", "stick", 44)
-	_wallet(p, Vector2(0, -0.35))
+	p.button(Lang.t("missions_map"), Vector2(0, y - 0.09), bs, func(): open("missions"), "normal", "", 50)
+	p.button(Lang.t("hangar"), Vector2(0, y - 0.17), bs, func(): open("hangar"), "normal", "", 50)
+	p.button(Lang.t("settings"), Vector2(0, y - 0.25), bs, func(): open("settings"), "normal", "", 50)
+	p.button(Lang.t("controls"), Vector2(0, y - 0.33), bs, func(): open("controls"), "normal", "", 50)
+	p.numbered = false
+	_wallet(p, Vector2(0, -0.36))
 
 
 ## The first mission not finished yet (or the first, once all are done).
@@ -216,7 +220,7 @@ func _missions() -> void:
 		var a := pts[i]
 		var b := pts[i + 1]
 		var done := bool(Profile.mission(ids[i]).get("done", false))
-		var dcol := Color(0.72, 0.14, 0.1) if done else p.fade(Color(0.3, 0.24, 0.16), 0.55)
+		var dcol := p.accent if done else p.fade(p.dim, 0.5)
 		var ctrl := (a + b) * 0.5
 		if absf(a.y - b.y) > 0.1:
 			ctrl += Vector2(signf(a.x) * 0.08, 0)
@@ -239,15 +243,15 @@ func _missions() -> void:
 		w.hint = "%d · %s" % [i + 1, Missions.text(m, "title")] if open_ok else Lang.t("locked_hint")
 		var n := Profile.stars_of(m.id)
 		if i == nxt and open_ok:
-			w.color = Panel3D.PRIMARY
+			w.color = p.accent
 			p.ring(c, 0.07, 0.006, p.accent, true)
 		elif n > 0:
-			w.color = Color(0.3, 0.36, 0.22)
+			w.color = Color(0.12, 0.42, 0.46)
 		if open_ok:
 			p.icon(m.icon, Vector2(0, 0.008), 0.036, Panel3D.TEXT, node)
 			p.label(str(i + 1), Vector2(0, -0.024), 40, Panel3D.TEXT, "title", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
 			for k in range(3):
-				p.icon("star", Vector2(c.x + (k - 1) * 0.024, c.y - 0.06), 0.02, Color(0.95, 0.62, 0.06) if k < n else p.fade(p.dim, 0.35))
+				p.icon("star", Vector2(c.x + (k - 1) * 0.024, c.y - 0.06), 0.02, p.pal.star if k < n else p.fade(p.dim, 0.35))
 			p.label(Missions.text(m, "title"), Vector2(c.x, c.y - 0.09), 40, p.ink, "bold")
 			if m.get("dusk", false):
 				p.label("☾", Vector2(c.x + p.sx(0.055), c.y + 0.04), 40, p.dim, "bold")
