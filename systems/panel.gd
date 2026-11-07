@@ -102,9 +102,9 @@ func setup(w: float, h: float, title: String = "", header: Color = HEADER, board
 ## the start side, hatch marks in the far corner and a slanted title with a
 ## skewed red underline.
 func _strike_board(w: float, h: float, title: String, header: Color) -> void:
-	shape(self, tag(w + 0.02, h + 0.02, 0.045), Vector3(0.014, -0.018, -0.012), Color(0, 0, 0, 0.35), 0.001)
-	shape(self, tag(w + 0.012, h + 0.012, 0.042), Vector3(0, 0, -0.004), pal.edge, 0.002)
-	shape(self, tag(w, h, 0.038), Vector3(0, 0, -0.002), pal.bg, 0.002)
+	shape(self, tag(w + 0.02, h + 0.02, 0.058), Vector3(0.014, -0.018, -0.012), Color(0, 0, 0, 0.35), 0.001)
+	shape(self, tag(w + 0.012, h + 0.012, 0.055), Vector3(0, 0, -0.004), pal.edge, 0.002)
+	shape(self, tag(w, h, 0.05), Vector3(0, 0, -0.002), pal.bg, 0.002)
 	var red: Color = header if header != HEADER else pal.accent
 	# Edge stripe on the reading-start side.
 	shape(self, skew(0.01, h * 0.55, 0.0), Vector3(sx(-w * 0.5 + 0.006), h * 0.08, 0.0004), red, 0.0006)
@@ -122,9 +122,15 @@ func _strike_board(w: float, h: float, title: String, header: Color) -> void:
 		shape(self, skew(0.03, 0.01, 0.012), Vector3(uw * 0.5 + 0.03, ty - 0.048, 0.001), fade(red, 0.5), 0.0008)
 
 
-## Parallelogram leaning forward by `lean` (top edge shifted right).
-static func skew(w: float, h: float, lean: float) -> PackedVector2Array:
-	return PackedVector2Array([Vector2(-w * 0.5 - lean * 0.5, -h * 0.5), Vector2(w * 0.5 - lean * 0.5, -h * 0.5), Vector2(w * 0.5 + lean * 0.5, h * 0.5), Vector2(-w * 0.5 + lean * 0.5, h * 0.5)])
+## Parallelogram leaning forward by `lean` (top edge shifted right), with
+## rounded corners (soft edges read better and look friendlier in the headset).
+static func skew(w: float, h: float, lean: float, r: float = -1.0) -> PackedVector2Array:
+	if r < 0.0:
+		r = minf(minf(w, h) * 0.45, 0.026)
+	var pts := rrect(w, h, r, 6)
+	for i in range(pts.size()):
+		pts[i].x += pts[i].y / maxf(h, 1e-5) * lean
+	return pts
 
 
 ## A colour mixed into the paper (opaque — see-through bits show the room).
@@ -364,10 +370,10 @@ func divider(y: float, w: float = -1.0) -> void:
 	shape(self, PackedVector2Array([Vector2(-ww * 0.5, -0.001), Vector2(ww * 0.5, -0.001), Vector2(ww * 0.5, 0.001), Vector2(-ww * 0.5, 0.001)]), Vector3(0, y, 0.001), fade(pal.line, 0.8), 0.001)
 
 
-## Clipped-corner tag outline.
+## Rounded tag outline.
 static func tag(w: float, h: float, corner: float = -1.0) -> PackedVector2Array:
 	var c := minf(0.016, h * 0.28) if corner < 0.0 else corner
-	return PackedVector2Array([Vector2(-w * 0.5 + c, -h * 0.5), Vector2(w * 0.5 - c, -h * 0.5), Vector2(w * 0.5, -h * 0.5 + c), Vector2(w * 0.5, h * 0.5 - c), Vector2(w * 0.5 - c, h * 0.5), Vector2(-w * 0.5 + c, h * 0.5), Vector2(-w * 0.5, h * 0.5 - c), Vector2(-w * 0.5, -h * 0.5 + c)])
+	return rrect(w, h, c, 7)
 
 
 ## A push button. style: normal · primary · ghost. Returns its widget dict
