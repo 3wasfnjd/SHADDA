@@ -93,6 +93,7 @@ func _ready() -> void:
 	battle.dusk_changed.connect(_on_dusk)
 	plane = PlayerPlane.new()
 	plane.hand = controllers[1]
+	plane.hand_l = controllers[0]
 	battle.add_child(plane)
 	plane.visible = false
 	xr = XRServer.find_interface("OpenXR") as OpenXRInterface
@@ -273,18 +274,23 @@ func _process(delta: float) -> void:
 			"yaw": _dead(ls.x),
 			"pitch": clampf(_dead(rs.y) * inv * sens, -1.0, 1.0),     # stick up = climb / take off, down = descend / land
 			"roll": clampf(_dead(rs.x) * sens, -1.0, 1.0),
-			"boost": controllers[other].get_float("trigger") > 0.5,
+			# Throttle-hand grip: boost in the air, brakes on the ground.
+			"boost": controllers[other].get_float("grip") > 0.5,
 			"brake": controllers[other].get_float("grip") > 0.5,
+			# Each trigger fires the guns under its own wing.
+			"trigger_l": controllers[0].get_float("trigger"),
 		}
+	var gun_r := tr if preview else controllers[1].get_float("trigger")
 	var aim := aims[stick].global_transform
 	menus.hand = controllers[stick]
 	if menus.is_open():
 		menus.update(delta, aim.origin, -aim.basis.z, tr)
-		tr = 0.0
+		gun_r = 0.0
 		gr = 0.0
+		inp.erase("trigger_l")
 	elif battle.phase == Battle.Phase.PLAYING and not battle.paused:
 		menus.update(delta, aim.origin, -aim.basis.z, 0.0)
-	battle.update_controls(delta, aim.origin, -aim.basis.z, inp, tr, gr)
+	battle.update_controls(delta, aim.origin, -aim.basis.z, inp, gun_r, gr)
 
 
 func _stick() -> int:

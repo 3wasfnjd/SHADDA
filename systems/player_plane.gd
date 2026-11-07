@@ -8,9 +8,11 @@ extends Node3D
 ##
 ## Left stick   ↑↓ throttle (stays where you leave it)   ←→ rudder / ground steering
 ## Right stick  ↑↓ pitch (pull back = nose up)            ←→ roll
-## Right trigger guns   Right grip hold = lock, release = rockets
+## Right trigger = right-wing guns, left trigger = left-wing guns (both = all)
+## Right grip hold = lock, release = rockets
 ## A special weapon (bombs, cluster, air mines, Thunderbolt)   B barrel roll
-## Left trigger boost   Left grip brakes
+## Left grip: boost in the air, brakes on the ground
+## X = U-turn (tight half circle), Y = loop (full vertical loop)
 ## Shot down, it comes apart in pieces and the pilot bails out on a chute.
 
 enum State { PARKED, FLYING, CRASHING, WRECKED }
@@ -45,6 +47,9 @@ var aim_assist: bool = true
 var leveler: bool = true
 var haptics: bool = true
 var easy_flight: bool = true      # Easy (attitude) or Pro (rates) flight
+var hand_l: XRController3D = null  # left controller (left-gun haptics)
+var _trig_l: float = 0.0
+var _man: Dictionary = {}          # running manoeuvre: loop / uturn
 var damage_taken: float = 0.0
 var _trails: Array = []
 var _dust_t: float = 0.0
@@ -130,6 +135,7 @@ func park(at: Vector3, heading: Vector3, surface_y: float) -> void:
 	throttle = 0.0
 	locks.clear()
 	_salvo.clear()
+	_man = {}
 	_roll_t = -1.0
 	_rpm = 0.0
 	visible = true
@@ -178,6 +184,7 @@ func nose() -> Vector3:
 ## inp: {pitch, roll, yaw, throttle_delta, boost, brake} from the sticks.
 func tick(delta: float, inp: Dictionary, trigger: float, grip: float) -> void:
 	hit_flash = maxf(0.0, hit_flash - delta * 4.0)
+	_trig_l = float(inp.get("trigger_l", 0.0))
 	var prev: Vector3 = flight.pos
 	match state:
 		State.PARKED:
@@ -198,6 +205,9 @@ func _fly(delta: float, inp: Dictionary) -> void:
 	throttle = clampf(throttle + float(inp.get("throttle_delta", 0.0)) * delta * 0.8, 0.0, 1.0)
 	if inp.has("throttle"):
 		throttle = float(inp.throttle)
+	if not _man.is_empty():
+		_step_manoeuvre(delta)
+		return
 	boosting = bool(inp.get("boost", false)) and boost > 0.02 and not flight.ground
 	if boosting:
 		boost = maxf(0.0, boost - delta / WarMath.BOOST_SECONDS)
@@ -390,9 +400,12 @@ func _animate(delta: float) -> void:
 func _weapons(delta: float, trigger: float, grip: float) -> void:
 	_reload(delta)
 	_gun_cd -= delta
-	if trigger > 0.55 and _gun_cd <= 0.0 and battle:
-		_gun_cd = 1.0 / (WarMath.GUN_RATE * gun_rate)
-		_fire_guns()
+	var right := trigger > 0.55
+	var left := _trig_l > 0.55
+	if (right or left) and _gun_cd <= 0.0 and battle:
+		var spec: Dictionary = WarMath.GUN_SPECS.get(gun_kind, WarMath.GUN_SPECS.twin)
+		_gun_cd = 1.0 / (WarMath.GUN_RATE * gun_rate * float(spec.rate))
+		_fire_guns(left, right)
 	if grip > 0.55:
 		_grip_held = true
 		_lock_timer -= delta
@@ -432,17 +445,26 @@ func _reload(delta: float) -> void:
 			refresh_stores()
 
 
-func _fire_guns() -> void:
+## Guns fire from the wing whose trigger is held: muzzles 0,1 are under the
+## left wing, 2,3 under the right.
+func _fire_guns(left: bool = true, right: bool = true) -> void:
 	var spec: Dictionary = WarMath.GUN_SPECS.get(gun_kind, WarMath.GUN_SPECS.twin)
 	var muzzles: Array = model.muzzles
 	var pair: Array = []
 	match int(spec.per):
 		4:
-			pair = [0, 1, 2, 3]
+			if left:
+				pair += [0, 1]
+			if right:
+				pair += [2, 3]
 		1:
-			pair = [_barrel * 2]
+			var side_r := right if not (left and right) else _barrel == 1
+			pair = [(2 if side_r else 0) + (_barrel if not (left and right) else 0)]
 		_:
-			pair = [_barrel, _barrel + 2]
+			if left:
+				pair.append(_barrel)
+			if right:
+				pair.append(_barrel + 2)
 	_barrel = 1 - _barrel
 	var converge := nose() + forward() * 0.9
 	var assist := _assist_point() if aim_assist else Vector3.INF
@@ -458,9 +480,12 @@ func _fire_guns() -> void:
 		if randf() < (0.5 if gun_kind != "cannon" else 1.0):
 			Fx.muzzle(battle, m.global_position, dir, 0.018 if gun_kind != "cannon" else 0.03)
 	battle.cue("cannon20" if gun_kind == "cannon" else "gun", global_position, -5.0 if gun_kind != "quad" else -3.0)
+	if left and hand_l and hand_l.get_is_active() and haptics:
+		hand_l.trigger_haptic_pulse("haptic", 0.0, 0.12 if gun_kind != "cannon" else 0.35, 0.02, 0.0)
 	if gun_kind == "minigun":
 		Fx.muzzle(battle, nose() + forward() * 0.02, forward(), 0.022)
-	_haptic(0.12 if gun_kind != "cannon" else 0.35, 0.02 if gun_kind != "cannon" else 0.05)
+	if right:
+		_haptic(0.12 if gun_kind != "cannon" else 0.35, 0.02 if gun_kind != "cannon" else 0.05)
 
 
 ## Aim assist: where to send rounds when an enemy sits near the sight.
@@ -598,7 +623,67 @@ func barrel_roll() -> bool:
 
 
 func rolling() -> bool:
-	return _roll_t >= 0.0
+	return _roll_t >= 0.0 or not _man.is_empty()
+
+
+## Y: a full vertical loop. Shakes off missiles like a roll.
+func loop() -> bool:
+	return _start_manoeuvre("loop", 1.8)
+
+
+## X: a tight half-circle U-turn toward the side the stick leans (right by default).
+func u_turn() -> bool:
+	return _start_manoeuvre("uturn", 1.3)
+
+
+func _start_manoeuvre(kind: String, dur: float) -> bool:
+	if not airborne() or _roll_t >= 0.0 or not _man.is_empty() or _roll_cd > 0.0:
+		return false
+	var f: Vector3 = -(flight.basis as Basis).z
+	f.y = 0.0
+	f = f.normalized() if f.length() > 0.05 else Vector3.FORWARD
+	var lean := WarMath.bank_of(flight.basis)
+	_man = {"kind": kind, "t": 0.0, "dur": dur, "p0": flight.pos, "f0": f, "side": -1.0 if (lean < -0.1 or _sm.roll < -0.2) else 1.0}
+	_roll_cd = WarMath.ROLL_COOLDOWN
+	if battle:
+		battle.cue("whoosh", global_position, 2.0)
+		if has_flares:
+			battle.flares(global_position - forward() * 0.1)
+	_haptic(0.4, 0.15)
+	return true
+
+
+func _step_manoeuvre(delta: float) -> void:
+	_man.t += delta
+	var u: float = clampf(_man.t / _man.dur, 0.0, 1.0)
+	var e := u * u * (3.0 - 2.0 * u)
+	var p0: Vector3 = _man.p0
+	var f0: Vector3 = _man.f0
+	var right0 := f0.cross(Vector3.UP).normalized()
+	var r := 0.38
+	var speed: float = maxf(float(flight.speed), 1.0)
+	var pos: Vector3
+	var b: Basis
+	if _man.kind == "loop":
+		var th := TAU * e
+		pos = p0 + f0 * (r * sin(th) + speed * 0.25 * u * float(_man.dur)) + Vector3.UP * (r * (1.0 - cos(th)))
+		b = Basis.looking_at(f0, Vector3.UP) * Basis(Vector3.RIGHT, th)
+	else:
+		var s: float = _man.side
+		var th2 := PI * e
+		pos = p0 + f0 * (r * sin(th2)) + right0 * s * (r * (1.0 - cos(th2))) + Vector3.UP * 0.12 * sin(th2)
+		var fwd := (f0 * cos(th2) + right0 * s * sin(th2)).normalized()
+		b = Basis.looking_at(fwd, Vector3.UP) * Basis(Vector3.FORWARD, s * 1.15 * sin(PI * u))
+	var floor_y: float = battle.surface_below(pos + Vector3(0, 0.05, 0)) if battle else 0.0
+	pos.y = maxf(pos.y, floor_y + gear_height + 0.05)
+	flight.pos = pos
+	flight.basis = b.orthonormalized()
+	flight.ground = false
+	if u >= 1.0:
+		var fin: Vector3 = -(flight.basis as Basis).z
+		fin.y = 0.0
+		flight.basis = Basis.looking_at(fin.normalized() if fin.length() > 0.05 else f0, Vector3.UP)
+		_man = {}
 
 
 func take_hit(amount: float, crash: bool = false) -> void:
@@ -619,6 +704,7 @@ func take_hit(amount: float, crash: bool = false) -> void:
 ## pilot bails out under a parachute.
 func _break_apart() -> void:
 	state = State.WRECKED
+	_man = {}
 	locks.clear()
 	_salvo.clear()
 	_rpm = 0.0

@@ -71,6 +71,7 @@ const ENEMIES := {
 	"radar":     {"hp": 10.0, "radius": 0.11, "points": 400},
 	"fuel":      {"hp": 4.0,  "radius": 0.09, "points": 250},
 	"diver":     {"hp": 4.0,  "radius": 0.12, "points": 300},
+	"wingman":   {"hp": 999.0, "radius": 0.1, "points": 0},
 	"heli":      {"hp": 9.0,  "radius": 0.13, "points": 450},
 	"raider":    {"hp": 9.0,  "radius": 0.13, "points": 500},
 	"gunship":   {"hp": 45.0, "radius": 0.32, "points": 3000},

@@ -127,6 +127,11 @@ func _ready() -> void:
 			parts = Models.transport(Models.FRIEND)
 		"heli":
 			parts = Models.heli()
+		"wingman":
+			parts = Models.fighter(Models.PLAYER, 0.002)
+			parts.root.scale = Vector3.ONE * 0.85
+			for g in parts.gear:
+				(g as Node3D).rotation.x = -1.45
 		"raider":
 			parts = Models.raider()
 			for g in parts.gear:
@@ -140,10 +145,10 @@ func _ready() -> void:
 		"fuel":
 			parts = Models.fuel_tank()
 	add_child(parts.root)
-	if kind in ["fighter", "ace", "transport", "bomber", "balloon", "diver", "cargo", "heli", "raider", "gunship"]:
+	if kind in ["fighter", "ace", "transport", "bomber", "balloon", "diver", "cargo", "heli", "raider", "gunship", "wingman"]:
 		_shadow = Toon.shadow_blob(radius * 2.6)
 		add_child(_shadow)
-	if kind in ["fighter", "ace", "transport", "bomber", "tank", "truck", "diver", "cargo", "heli", "raider", "gunship"]:
+	if kind in ["fighter", "ace", "transport", "bomber", "tank", "truck", "diver", "cargo", "heli", "raider", "gunship", "wingman"]:
 		_engine = AudioStreamPlayer3D.new()
 		var s = load("res://assets/audio/" + ("tank_engine" if kind in ["tank", "truck"] else "enemy_engine") + ".wav")
 		if s is AudioStreamWAV:
@@ -153,7 +158,7 @@ func _ready() -> void:
 		_engine.unit_size = 0.7 if not kind in ["bomber", "gunship"] else 1.4
 		_engine.max_distance = 7.0
 		_engine.volume_db = -20.0 if not kind in ["bomber", "gunship"] else -12.0
-		_engine.pitch_scale = {"fighter": 1.15, "ace": 1.35, "transport": 0.8, "bomber": 0.6, "tank": 1.0, "truck": 1.25, "diver": 1.05, "cargo": 0.75, "heli": 1.7, "raider": 0.95, "gunship": 0.5}[kind]
+		_engine.pitch_scale = {"fighter": 1.15, "ace": 1.35, "transport": 0.8, "bomber": 0.6, "tank": 1.0, "truck": 1.25, "diver": 1.05, "cargo": 0.75, "heli": 1.7, "raider": 0.95, "gunship": 0.5, "wingman": 1.25}[kind]
 		_engine.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
 		_engine.bus = &"SFX"
 		add_child(_engine)
@@ -299,6 +304,8 @@ func tick(delta: float) -> void:
 				_raider_rockets(delta)
 		"heli":
 			_tick_heli(delta)
+		"wingman":
+			_tick_wingman(delta)
 		"gunship":
 			_tick_bomber(delta)
 			if state == State.ACTIVE:
@@ -405,6 +412,8 @@ func _entering(delta: float, speed: float) -> bool:
 func _tick_fighter(delta: float) -> void:
 	if state == State.ENTER:
 		_entering(delta, 1.3)
+		return
+	if _hold_formation(delta):
 		return
 	var hunting: bool = prey != null and is_instance_valid(prey) and prey.alive()
 	if practice and not hunting:
@@ -578,6 +587,80 @@ func _tick_bomber(delta: float) -> void:
 	if _bomb_t <= 0.0:
 		_bomb_t = _rng.randf_range(4.0, 6.0)
 		battle.enemy_fire("ebomb", (parts.bay as Node3D).global_position, Vector3.DOWN, velocity)
+
+
+## Enemy squadrons arrive in a V behind their leader and hold it for a few
+## seconds (until the leader falls or they're hit), then break to attack.
+func _hold_formation(delta: float) -> bool:
+	if not has_meta("form_lead"):
+		return false
+	var lead = get_meta("form_lead")
+	if lead == self or not is_instance_valid(lead) or not lead.alive() or age > float(get_meta("form_until", 7.0)) or hp < max_hp:
+		remove_meta("form_lead")
+		return false
+	var lb := Basis.looking_at(lead.flight.fwd, Vector3.UP)
+	var off: Vector3 = get_meta("form_off")
+	var slot: Vector3 = (lead.flight.pos as Vector3) + lb * off
+	var gap := slot - (flight.pos as Vector3)
+	flight = WarMath.fly(flight, slot + (lead.flight.fwd as Vector3) * 0.4, clampf(float(lead.flight.speed) + gap.length() * 1.5, 0.6, 2.2), delta, battle.box, 3.0)
+	_pose_from_flight()
+	return true
+
+
+## Your squadron: a wingman holds a slot beside your plane and breaks off to
+## chase enemy planes that come near you, then comes back to formation.
+var _wing_shot_t: float = 0.0
+func _tick_wingman(delta: float) -> void:
+	var lead: PlayerPlane = battle.plane
+	var slot: Vector3 = get_meta("slot", Vector3(0.32, 0.02, 0.3))
+	var lpos: Vector3 = lead.global_position
+	var lfwd: Vector3 = lead.forward()
+	lfwd.y = clampf(lfwd.y, -0.5, 0.5)
+	lfwd = lfwd.normalized()
+	_mode_t -= delta
+	if _mode_t <= 0.0:
+		_mode_t = 1.5
+		prey = null
+		var best := 2.6
+		for e in battle.enemies:
+			if e.alive() and e.state == State.ACTIVE and e.kind in ["fighter", "ace", "diver", "raider", "heli", "transport"]:
+				var d: float = e.hit_center().distance_to(lpos)
+				if d < best:
+					best = d
+					prey = e
+	var spd := 1.2
+	# Leash: never stray far from you.
+	if (flight.pos as Vector3).distance_to(lpos) > 2.4:
+		prey = null
+		_mode_t = 1.0
+	var hunting: bool = prey != null and is_instance_valid(prey) and (prey as Enemy).alive()
+	if hunting:
+		var tgt: Vector3 = (prey as Enemy).hit_center()
+		_goal = tgt + (prey as Enemy).velocity * 0.3
+		spd = 1.6
+		var to := tgt - (flight.pos as Vector3)
+		_wing_shot_t -= delta
+		if to.length() < 2.2 and (flight.fwd as Vector3).dot(to.normalized()) > 0.985 and _wing_shot_t <= 0.0:
+			_wing_shot_t = 0.11
+			var side := (flight.fwd as Vector3).cross(Vector3.UP).normalized()
+			for sgn: float in [-1.0, 1.0]:
+				var from: Vector3 = (flight.pos as Vector3) + (flight.fwd as Vector3) * 0.08 + side * 0.05 * sgn
+				battle.player_fire("bullet", from, (tgt - from).normalized(), velocity * 0.5, null, {"damage": 0.45, "ally": true})
+			battle.cue("enemy_gun", global_position, -10.0)
+	elif lead.airborne():
+		var lb := Basis.looking_at(lfwd, Vector3.UP)
+		_goal = lpos + lb * slot
+		var gap := _goal - (flight.pos as Vector3)
+		spd = clampf(float(lead.flight.speed) + gap.length() * 1.6, 0.6, 2.4)
+		_goal += lfwd * 0.5
+	else:
+		# Plane on the ground: circle overhead and wait.
+		var a := age * 0.5 + (0.0 if slot.x > 0.0 else PI)
+		_goal = lpos + Vector3(cos(a) * 0.9, 1.2, sin(a) * 0.9)
+		spd = 0.9
+	_goal.y = maxf(_goal.y, battle.floor_y + 0.35)
+	flight = WarMath.fly(flight, _goal, spd, delta, battle.box, 3.2)
+	_pose_from_flight()
 
 
 ## Raider: a homing rocket whenever the player is ahead of its nose.

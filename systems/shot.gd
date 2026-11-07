@@ -17,6 +17,7 @@ var dead: bool = false
 var fuse: float = 0.0
 var gravity: float = 0.0
 var incendiary: bool = false
+var ally: bool = false           # fired by a wingman (not counted in your accuracy)
 var explosive: float = 0.0       # 20 mm: blast radius on impact
 var _light: MeshInstance3D
 var _trail_timer: float = 0.0

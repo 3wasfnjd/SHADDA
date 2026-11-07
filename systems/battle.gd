@@ -64,6 +64,7 @@ var _arena_marks: Array = []
 var _low_warned: bool = false
 var missiles_beaten: int = 0         # homing missiles shot down, rolled off or decoyed
 var _fire_zones: Array = []          # napalm: {at, t}
+var wingmen: Array = []              # your support squadron
 signal dusk_changed(on: bool)
 var hands: Array = []            # XRControllers for rumble (optional)
 var aim_origin: Vector3 = Vector3.ZERO
@@ -220,10 +221,19 @@ func on_button(action: StringName, hand_index: int) -> void:
 				return
 			if paused:
 				return
-			if action == &"ax_button":
-				plane.use_special()
-			elif action == &"by_button":
-				plane.barrel_roll()
+			# Flight-stick hand: A special weapon, B barrel roll.
+			# Other hand: X U-turn, Y loop.
+			var stick_hand := 0 if str(Profile.get_s("hand")) == "left" else 1
+			if hand_index == stick_hand or not free_flight:
+				if action == &"ax_button":
+					plane.use_special()
+				elif action == &"by_button":
+					plane.barrel_roll()
+			else:
+				if action == &"ax_button":
+					plane.u_turn()
+				elif action == &"by_button":
+					plane.loop()
 		Phase.RESULTS:
 			if _phase_t < 1.2 or free_flight:
 				return
@@ -426,6 +436,31 @@ func mission_over(victory: bool, stars: int, why: String) -> void:
 		menus.open("debrief" if victory else "failed", result)
 
 
+## From mission 2 on, two wingmen join you once you're in the air.
+func _call_squadron() -> void:
+	if not free_flight or phase != Phase.PLAYING or campaign == null or mission_index < 1:
+		return
+	if not wingmen.is_empty() or not plane.airborne():
+		return
+	var f := plane.forward()
+	f.y = 0.0
+	f = f.normalized() if f.length() > 0.05 else Vector3.FORWARD
+	var right := f.cross(Vector3.UP).normalized()
+	for sgn: float in [-1.0, 1.0]:
+		var w := Enemy.create("wingman")
+		w.battle = self
+		w.friendly = true
+		w.set_meta("slot", Vector3(0.34 * sgn, 0.03, 0.32))
+		add_child(w)
+		var at := plane.global_position - f * 1.2 + right * 0.5 * sgn + Vector3(0, 0.15, 0)
+		w.flight = {"pos": at, "fwd": f, "speed": float(plane.flight.speed) + 0.3, "bank": 0.0}
+		w.global_position = at
+		w.state = Enemy.State.ACTIVE
+		wingmen.append(w)
+	callout(Lang.t("squadron_in"), Color(0.5, 1.0, 0.6), 2.5)
+	cue("plane_in", plane.global_position, 0.0)
+
+
 ## Next mission (or the same one again) without landing or menus.
 func _advance(i: int) -> void:
 	mission_index = clampi(i, 0, Missions.LIST.size() - 1)
@@ -471,6 +506,8 @@ func _set_arena() -> void:
 			add_child(holder)
 			holder.global_position = arena_origin + arena_side * sx * ARENA_SIDE + arena_fwd * fz + Vector3(0, 0.003, 0)
 			holder.global_basis = Basis.looking_at(-arena_fwd, Vector3.UP)
+			holder.set_meta("sx", sx)
+			holder.set_meta("fz", fz)
 			var inward_x := -sx
 			var inward_z := 1.0 if fz == ARENA_NEAR else -1.0
 			var mat := Toon.flat(Color(1.0, 0.72, 0.2, 0.55))
@@ -506,6 +543,28 @@ func arena_entry(k: int) -> Vector3:
 	return p
 
 
+## Walk around with your plane: the battle area slowly follows where you
+## stand and which way you face, so the fight stays in front of you.
+func _follow_player(delta: float) -> void:
+	var hp := head_position()
+	var want := Vector3(hp.x, floor_y, hp.z)
+	arena_origin = arena_origin.lerp(want, minf(1.0, delta * 0.8))
+	var f := -(head as Node3D).global_basis.z
+	f.y = 0.0
+	if f.length() > 0.1:
+		f = f.normalized()
+		var ang := arena_fwd.signed_angle_to(f, Vector3.UP)
+		arena_fwd = arena_fwd.rotated(Vector3.UP, clampf(ang, -0.5 * delta, 0.5 * delta)).normalized()
+	arena_side = arena_fwd.cross(Vector3.UP).normalized()
+	arena_center = arena_origin + arena_fwd * 2.4
+	for m in _arena_marks:
+		if is_instance_valid(m):
+			var sx: float = m.get_meta("sx")
+			var fz: float = m.get_meta("fz")
+			m.global_position = arena_origin + arena_side * sx * ARENA_SIDE + arena_fwd * fz + Vector3(0, 0.003, 0)
+			m.global_basis = Basis.looking_at(-arena_fwd, Vector3.UP)
+
+
 func _check_behind(delta: float) -> void:
 	_behind_t -= delta
 	if not plane.airborne() or _behind_t > 0.0:
@@ -523,7 +582,7 @@ func callout(text: String, color: Color = Color(1, 0.85, 0.3), seconds: float = 
 	_callout.visible = true
 	var cam := get_viewport().get_camera_3d()
 	if cam:
-		_callout.global_position = cam.global_position - cam.global_basis.z * 1.3 + Vector3(0, 0.28, 0)
+		_callout.global_position = cam.global_position - cam.global_basis.z * 1.3 + Vector3(0, 0.38, 0)
 
 
 func _step_callout(delta: float) -> void:
@@ -535,7 +594,7 @@ func _step_callout(delta: float) -> void:
 	if cam:
 		var f := -cam.global_basis.z
 		f.y = clampf(f.y, -0.3, 0.3)
-		var want := cam.global_position + f.normalized() * 1.3 + Vector3(0, 0.28, 0)
+		var want := cam.global_position + f.normalized() * 1.3 + Vector3(0, 0.38, 0)
 		_callout.global_position = _callout.global_position.lerp(want, minf(1.0, delta * 3.0))
 		var to := cam.global_position - _callout.global_position
 		if to.length() > 0.05:
@@ -632,6 +691,10 @@ func _physics_process(delta: float) -> void:
 	for f in friends.duplicate():
 		if is_instance_valid(f):
 			f.tick(delta)
+	for w in wingmen:
+		if is_instance_valid(w):
+			w.tick(delta)
+	_call_squadron()
 	_step_burns(delta)
 	_step_fire_zones(delta)
 	_step_pickups(delta)
@@ -677,6 +740,7 @@ func _physics_process(delta: float) -> void:
 			if _next_t < 0.0:
 				_advance(mission_index if _next_retry else mission_index + 1)
 				return
+		_follow_player(delta)
 		campaign.tick(delta)
 		_check_behind(delta)
 		return
@@ -913,7 +977,9 @@ func player_fire(kind: String, from: Vector3, dir: Vector3, inherit: Vector3, ta
 		s.damage *= plane.gun_damage * float(spec.get("damage", 1.0))
 		s.incendiary = bool(spec.get("incendiary", false))
 		s.explosive = float(spec.get("explosive", 0.0))
-		shots_fired += 1
+		s.ally = bool(spec.get("ally", false))
+		if not s.ally:
+			shots_fired += 1
 	s.target = target
 	add_child(s)
 	shots.append(s)
@@ -1043,7 +1109,8 @@ func _resolve(s: Shot) -> void:
 			if best_e.alive() and best_e.damage(s.damage, at):
 				_kill(best_e, "rocket")
 		else:
-			shots_hit += 1
+			if not s.ally:
+				shots_hit += 1
 			Fx.sparks(self, at, (a - b).normalized(), 3)
 			cue("hit", at, -8.0)
 			if s.explosive > 0.0:
@@ -1531,6 +1598,10 @@ func _clear_battlefield() -> void:
 	friends.clear()
 	Debris.clear_all()
 	_fire_zones.clear()
+	for w in wingmen:
+		if is_instance_valid(w):
+			w.queue_free()
+	wingmen.clear()
 	_callout_t = 0.0
 	for s in shots:
 		s.queue_free()

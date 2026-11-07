@@ -9,9 +9,16 @@ var index: int = 0
 var id: String = ""
 var mode: String = "intro"       # intro, play, won, failed
 var t: float = 0.0               # mission clock (starts when you take off)
-var center: Vector3
-var fwd: Vector3
-var side: Vector3
+# The battle area follows the player as they walk and turn (Battle keeps it).
+var center: Vector3:
+	get:
+		return battle.arena_center if battle else Vector3.ZERO
+var fwd: Vector3:
+	get:
+		return battle.arena_fwd if battle else Vector3.FORWARD
+var side: Vector3:
+	get:
+		return battle.arena_side if battle else Vector3.RIGHT
 var objective: String = ""
 var stars_won: int = 0
 var _card: Node3D
@@ -47,9 +54,6 @@ func begin(b, i: int, cont: bool = false) -> void:
 	id = Missions.get_m(i).id
 	_rng.randomize()
 	# Everything happens in the battle area in front of the player.
-	fwd = battle.arena_fwd
-	side = battle.arena_side
-	center = battle.arena_center
 	mode = "intro"
 	t = 0.0
 	_intro_t = 0.0
@@ -198,9 +202,8 @@ func _setup_patrol() -> void:
 	for k in range(5):
 		var a := TAU * k / 5.0 + 0.3
 		battle.spawn_at("balloon", center + side * cos(a) * 1.9 + fwd * sin(a) * 1.2 + Vector3(0, 0.9 + 0.3 * (k % 3), 0), fwd)
-	_fly_in("fighter", 0)
-	_fly_in("fighter", 1)
-	_waves = ["fighter"]
+	_fly_in_formation(["fighter", "fighter", "fighter"])
+	_waves = []
 	_events.append([3.0, func(): battle.callout(Lang.t("tip_rockets"), Color(1, 0.9, 0.5), 3.5)])
 
 
@@ -321,8 +324,8 @@ func _play_dogfight(delta: float) -> void:
 			if _wave_i >= _waves.size():
 				_win(hull_lost() < 40.0, hull_lost() < 15.0)
 				return
-			for k in range(_waves[_wave_i].size()):
-				_fly_in(_waves[_wave_i][k], k)
+			# Each wave arrives as a squadron in a V (the ace leads his).
+			_fly_in_formation(_waves[_wave_i])
 			if _waves[_wave_i].has("ace"):
 				battle.cue("alarm", battle.head_position(), 0.0)
 				battle.callout(Lang.t("ace_in"), Color(1.0, 0.35, 0.25), 2.5)
@@ -523,13 +526,11 @@ func _play_raiders(delta: float) -> void:
 			if _wave_i >= _waves.size():
 				_win(hull_lost() < 40.0, t <= 150.0)
 				return
-			for k in range(_waves[_wave_i].size()):
-				var kind: String = _waves[_wave_i][k]
-				if kind == "heli":
-					_heli_pop(k)
-				else:
-					var e := _fly_in(kind, k)
-					e.practice = false
+			var planes_w: Array = _waves[_wave_i].filter(func(kk): return kk != "heli")
+			for e in _fly_in_formation(planes_w):
+				(e as Enemy).practice = false
+			for k in range(_waves[_wave_i].count("heli")):
+				_heli_pop(k)
 			battle.cue("alarm", battle.head_position(), -4.0)
 			_spawn_t = 2.5
 	objective = Lang.t("raider_line") % [maxi(1, _wave_i + 1), _alive_of(["raider"])]
@@ -565,6 +566,25 @@ func _play_fortress(delta: float) -> void:
 
 
 # --- helpers -------------------------------------------------------------------------------------------
+
+## A squadron in a V: the leader first, wingmen behind on either side.
+func _fly_in_formation(kinds: Array) -> Array:
+	var n := kinds.size()
+	var lead := _fly_in(kinds[0], 1)
+	var out: Array = [lead]
+	var offs := [Vector3(-0.3, 0.0, 0.32), Vector3(0.3, 0.0, 0.32), Vector3(-0.6, 0.0, 0.64), Vector3(0.6, 0.0, 0.64)]
+	var lb := Basis.looking_at(lead.flight.fwd, Vector3.UP)
+	for k in range(mini(n - 1, offs.size())):
+		var at: Vector3 = (lead.flight.pos as Vector3) + lb * (offs[k] as Vector3) - (lead.flight.fwd as Vector3) * 0.55
+		var e: Enemy = battle.spawn_at(kinds[k + 1], at + (lead.flight.fwd as Vector3) * 0.55, lead.flight.fwd)
+		e.practice = kinds[k + 1] in ["fighter", "ace"]
+		e.set_meta("form_lead", lead)
+		e.set_meta("form_off", offs[k])
+		e.set_meta("form_until", 7.0)
+		out.append(e)
+	battle.callout(Lang.t("squadron_enemy"), Color(1.0, 0.55, 0.3), 2.0)
+	return out
+
 
 ## Enemy planes come in from far ahead, toward the player's front.
 func _fly_in(kind: String, k: int) -> Enemy:

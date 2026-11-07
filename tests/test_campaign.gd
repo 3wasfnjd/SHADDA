@@ -464,6 +464,63 @@ func _run() -> void:
 	await _until(func(): return false, 72)
 	assert(not tank.alive() or tank.hp < thp - 1.5, "napalm burns what stands in it")
 
+	print("STAGE: squadron, formations, split triggers, loop and U-turn, walking")
+	Profile.equip("twin")
+	battle.start_mission(M("patrol"))
+	c = battle.campaign
+	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)
+	assert(await _until(func(): return c.mode == "play", 72 * 10))
+	assert(await _until(func(): return battle.wingmen.size() == 2, 72 * 3), "two wingmen joined once airborne")
+	var formed := battle.enemies.filter(func(e): return e.kind == "fighter" and e.has_meta("form_lead"))
+	assert(formed.size() == 2, "the enemy squadron arrives as a V behind its leader")
+	var lead_f: Enemy = formed[0].get_meta("form_lead")
+	await _until(func(): return false, 72 * 2)
+	assert((formed[0] as Enemy).global_position.distance_to(lead_f.global_position) < 0.9, "wingmen hold the V")
+	# Wingmen keep station beside the player's plane.
+	await _until(func(): return false, 72 * 3)
+	for w in battle.wingmen:
+		assert((w as Enemy).global_position.distance_to(plane.global_position) < 3.0, "wingman stays with you (%.2f m)" % (w as Enemy).global_position.distance_to(plane.global_position))
+	# Left trigger alone fires only the left-wing guns.
+	plane._gun_cd = 0.0
+	var n0 := battle.shots.size()
+	plane.tick(1.0 / 90.0, {"trigger_l": 1.0}, 0.0, 0.0)
+	var new_shots: Array = battle.shots.slice(n0).filter(func(sh): return sh.kind == "bullet" and not sh.ally)
+	assert(new_shots.size() >= 1, "left trigger fired")
+	for sh in new_shots:
+		assert((plane.global_transform.affine_inverse() * (sh as Shot).global_position).x < 0.0, "left trigger → left wing guns")
+	plane._gun_cd = 0.0
+	n0 = battle.shots.size()
+	plane.tick(1.0 / 90.0, {}, 1.0, 0.0)
+	new_shots = battle.shots.slice(n0).filter(func(sh): return sh.kind == "bullet" and not sh.ally)
+	for sh in new_shots:
+		assert((plane.global_transform.affine_inverse() * (sh as Shot).global_position).x > 0.0, "right trigger → right wing guns")
+	# Loop: back to the same heading; U-turn: heading reversed.
+	fly = false
+	plane.flight.pos = battle.arena_center + Vector3(0, 1.2, 0)
+	plane.flight.basis = Basis.looking_at(battle.arena_side, Vector3.UP)
+	plane._roll_cd = 0.0
+	var h0 := plane.forward()
+	assert(plane.loop(), "loop started")
+	var top := [0.0]
+	var y0: float = plane.global_position.y
+	await _until(func():
+		top[0] = maxf(top[0], plane.global_position.y - y0)
+		return plane._man.is_empty(), 72 * 4)
+	assert(top[0] > 0.6 and plane.forward().dot(h0) > 0.95, "a full loop: up and over, same heading (%.2f m)" % top[0])
+	plane._roll_cd = 0.0
+	assert(plane.u_turn(), "U-turn started")
+	await _until(func(): return plane._man.is_empty(), 72 * 4)
+	assert(plane.forward().dot(h0) < -0.9, "U-turn reverses the heading")
+	fly = true
+	# Walk and turn: the battle area follows.
+	var f_before := battle.arena_fwd
+	head.rotate_y(PI * 0.5)
+	head.position += Vector3(1.0, 0, 0)
+	await _until(func(): return false, 72 * 4)
+	assert(battle.arena_fwd.dot(f_before) < 0.6 and battle.arena_origin.distance_to(Vector3(head.global_position.x, 0, head.global_position.z)) < 0.3, "the battle area follows the player")
+	head.rotate_y(-PI * 0.5)
+	head.position -= Vector3(1.0, 0, 0)
+
 	print("STAGE: pause")
 	battle.start_mission(M("training"))
 	goal = plane.global_position + plane.forward() * 3.0 + Vector3(0, 1.0, 0)

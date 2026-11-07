@@ -423,20 +423,20 @@ func _reset() -> void:
 func _controls() -> void:
 	var p := _new(0.98, 0.7, Lang.t("controls"))
 	var left_hand := str(Profile.get_s("hand")) == "left"
-	var throttle_col := [Lang.t("c_throttle"), Lang.t("c_rudder"), Lang.t("c_boost"), Lang.t("c_brake"), Lang.t("c_menu")]
+	var throttle_col := [Lang.t("c_throttle"), Lang.t("c_rudder"), Lang.t("c_boost"), Lang.t("c_brake"), Lang.t("c_x"), Lang.t("c_y"), Lang.t("c_menu")]
 	var stick_col := [Lang.t("c_pitch"), Lang.t("c_roll"), Lang.t("c_guns"), Lang.t("c_rockets"), Lang.t("c_a"), Lang.t("c_b")]
 	var cols := [[Lang.t("c_left"), stick_col if left_hand else throttle_col], [Lang.t("c_right"), throttle_col if left_hand else stick_col]]
 	for ci in range(2):
 		var x := -0.24 if ci == 0 else 0.24      # physical left/right, never mirrored
-		Panel3D.shape(p, Panel3D.rrect(0.44, 0.36, 0.02), Vector3(x, 0.035, 0.0), Color(0.11, 0.14, 0.2), 0.002)
+		Panel3D.shape(p, Panel3D.rrect(0.44, 0.39, 0.02), Vector3(x, 0.02, 0.0), Color(0.11, 0.14, 0.2), 0.002)
 		p.icon("stick", Vector2(x, 0.185), 0.045, Panel3D.GOLD)
 		p.label(cols[ci][0], Vector2(x, 0.14), 50, Panel3D.GOLD, "bold")
 		var y := 0.09
 		for line in cols[ci][1]:
 			p.label(line, Vector2(x, y), 38, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.42)
-			y -= 0.045
-	p.label(Lang.t("c_takeoff"), Vector2(0, -0.185), 36, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.84)
-	p.label(Lang.t("c_land"), Vector2(0, -0.24), 36, Panel3D.DIM, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.84)
+			y -= 0.04
+	p.label(Lang.t("c_takeoff"), Vector2(0, -0.205), 36, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.84)
+	p.label(Lang.t("c_land"), Vector2(0, -0.25), 36, Panel3D.DIM, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.84)
 	if args.has("then"):
 		var i := int(args.then)
 		p.button(Lang.t("start"), Vector2(0, -0.305), Vector2(0.3, 0.065), func(): close(); battle.start_mission(i), "primary", "play", 54)
