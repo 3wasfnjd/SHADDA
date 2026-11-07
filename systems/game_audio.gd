@@ -54,7 +54,7 @@ func play_music(track: String) -> void:
 		var w := s as AudioStreamWAV
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		w.loop_begin = 0
-		w.loop_end = w.data.size() / 2
+		w.loop_end = int(w.get_length() * w.mix_rate)
 	if _music.is_empty():
 		for i in range(2):
 			var p := AudioStreamPlayer.new()

@@ -131,7 +131,7 @@ func _ready() -> void:
 	var stream = load("res://assets/audio/engine.wav")
 	if stream is AudioStreamWAV:
 		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
-		(stream as AudioStreamWAV).loop_end = (stream as AudioStreamWAV).data.size() / 2
+		(stream as AudioStreamWAV).loop_end = int((stream as AudioStreamWAV).get_length() * (stream as AudioStreamWAV).mix_rate)
 	_engine.stream = stream
 	_engine.unit_size = 0.9
 	_engine.max_distance = 8.0

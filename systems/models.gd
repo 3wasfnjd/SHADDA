@@ -95,19 +95,51 @@ static func bomb() -> Node3D:
 
 # --- fighters ------------------------------------------------------------------------
 
+## Fighter fuselage profile: Vector3(z, radius, y lift).
+const FUSE := [Vector3(-0.1, 0.0, 0.0), Vector3(-0.1, 0.03, 0.0), Vector3(-0.08, 0.034, 0.0), Vector3(-0.04, 0.035, 0.001), Vector3(0.0, 0.033, 0.002), Vector3(0.04, 0.029, 0.003), Vector3(0.08, 0.022, 0.0045), Vector3(0.12, 0.015, 0.006), Vector3(0.155, 0.009, 0.007), Vector3(0.172, 0.004, 0.007), Vector3(0.177, 0.0, 0.007)]
+static var _fuse_mesh: ArrayMesh
+
+static func fuselage_mesh() -> ArrayMesh:
+	if _fuse_mesh == null:
+		_fuse_mesh = Toon.lathe(FUSE, 22, Vector2(1.0, 1.1))
+	return _fuse_mesh
+
+
+static func _fuse_r(z: float) -> float:
+	for i in range(FUSE.size() - 1):
+		var a: Vector3 = FUSE[i]
+		var b: Vector3 = FUSE[i + 1]
+		if z >= a.x and z <= b.x and b.x > a.x:
+			return lerpf(a.y, b.y, (z - a.x) / (b.x - a.x))
+	return 0.0
+
+
+static func _fuse_y(z: float) -> float:
+	for i in range(FUSE.size() - 1):
+		var a: Vector3 = FUSE[i]
+		var b: Vector3 = FUSE[i + 1]
+		if z >= a.x and z <= b.x and b.x > a.x:
+			return lerpf(a.z, b.z, (z - a.x) / (b.x - a.x))
+	return 0.0
+
+
 ## The cartoon fighter (player palette or enemy palette). ~28 cm long, 34 cm span.
 ## Returns {root, prop, blur, gear: Array, rockets: Array, bombs: Array,
 ##          muzzles: Array, nose, exhaust: Array}.
 static func fighter(pal: Dictionary, outline: float = 0.0018) -> Dictionary:
 	var root := Node3D.new()
 	root.name = "Fighter"
-	var body := Toon.mat(pal.body, 0.55, outline)
-	var trim := Toon.mat(pal.trim, 0.45, outline)
+	var body := Toon.mat(pal.body, 0.38, outline)
+	var trim := Toon.mat(pal.trim, 0.38, outline)
 	var metal := Toon.mat(METAL, 0.6, outline)
 	var dark := Toon.mat(DARK, 0.4, outline)
-	# Fuselage: a fat capsule tapering to the tail.
-	Toon.add(root, Toon.capsule(0.031, 0.19, 18), body, Vector3(0, 0, 0.0), Vector3(90, 0, 0), Vector3(1.0, 1.0, 1.08))
-	Toon.add(root, Toon.can(0.011, 0.028, 0.11, 16), body, Vector3(0, 0.004, 0.115), Vector3(90, 0, 0))
+	# Fuselage: one smooth lofted body, fat behind the engine, tapering and
+	# lifting slightly to the tail.
+	Toon.add(root, fuselage_mesh(), body)
+	# Trim bands around the rear fuselage.
+	for zb: float in [0.085, 0.1]:
+		var rb := _fuse_r(zb)
+		Toon.add(root, Toon.torus(rb + 0.0008, 0.0022, 20), trim, Vector3(0, _fuse_y(zb), zb), Vector3(90, 0, 0), Vector3(1, 1, 1.1))
 	# Engine cowling, radial cylinders, nose ring.
 	Toon.add(root, Toon.can(0.037, 0.035, 0.05, 20), metal, Vector3(0, 0, -0.1), Vector3(90, 0, 0))
 	Toon.add(root, Toon.torus(0.034, 0.005, 20), Toon.mat(pal.nose, 0.5, outline), Vector3(0, 0, -0.124), Vector3(90, 0, 0))
@@ -125,32 +157,33 @@ static func fighter(pal: Dictionary, outline: float = 0.0018) -> Dictionary:
 	Toon.add(root, Toon.ball(0.022, 16, 10), Toon.mat(GLASS, 0.9, outline), Vector3(0, 0.026, -0.015), Vector3.ZERO, Vector3(0.82, 0.85, 1.75))
 	Toon.add(root, Toon.torus(0.02, 0.0025, 18), metal, Vector3(0, 0.03, -0.015), Vector3(0, 0, 90), Vector3(1, 1, 1))
 	Toon.add(root, Toon.block(Vector3(0.003, 0.004, 0.07)), metal, Vector3(0, 0.044, -0.015))
-	# Low wings with rounded tips and a little dihedral.
-	var wing := PackedVector2Array([Vector2(0.02, -0.04), Vector2(0.12, -0.03), Vector2(0.158, -0.022), Vector2(0.172, -0.008), Vector2(0.172, 0.008), Vector2(0.162, 0.02), Vector2(0.12, 0.028), Vector2(0.02, 0.034)])
+	# Low wings: real airfoil section, thick at the root, elliptical tips,
+	# a little dihedral.
 	for side: float in [-1.0, 1.0]:
 		var holder := Node3D.new()
 		holder.position = Vector3(0, -0.016, 0)
 		holder.rotation_degrees.z = 5.0 * side
 		root.add_child(holder)
-		Toon.add(holder, Toon.slab(wing if side > 0 else Toon.mirror_x(wing), 0.013), body)
-		insignia(holder, pal, 0.026, Vector3(0.11 * side, 0.0068, -0.003), Vector3.ZERO)
-		Toon.add(holder, Toon.block(Vector3(0.05, 0.0135, 0.008)), trim, Vector3(0.145 * side, 0, -0.016))
+		Toon.add(holder, Toon.wing(0.175, 0.08, 0.052, 0.02, -0.044, 0.01, side, 0.3), body)
+		insignia(holder, pal, 0.024, Vector3(0.11 * side, 0.0062, -0.006), Vector3.ZERO)
 	# Tailplane with stripes, fin with stripes.
-	var stab := PackedVector2Array([Vector2(0.01, 0.11), Vector2(0.06, 0.112), Vector2(0.074, 0.122), Vector2(0.074, 0.136), Vector2(0.06, 0.146), Vector2(0.01, 0.15)])
 	for side: float in [-1.0, 1.0]:
-		Toon.add(root, Toon.slab(stab if side > 0 else Toon.mirror_x(stab), 0.008), body, Vector3(0, 0.006, 0))
-		for k in range(2):
-			Toon.add(root, Toon.block(Vector3(0.008, 0.0085, 0.036)), trim, Vector3((0.04 + k * 0.018) * side, 0.006, 0.13))
-	var fin := PackedVector2Array([Vector2(0.0, 0.07), Vector2(0.03, 0.095), Vector2(0.07, 0.112), Vector2(0.078, 0.126), Vector2(0.07, 0.15), Vector2(0.0, 0.16)])
+		Toon.add(root, Toon.wing(0.078, 0.046, 0.028, 0.011, 0.11, 0.012, side, 0.45, 7, 7), body, Vector3(0, 0.006, 0))
+		# Painted tip of the tailplane.
+		Toon.add(root, Toon.wing(0.02, 0.031, 0.026, 0.0125, 0.1215, 0.009, side, 0.9, 5, 7), trim, Vector3(0.058 * side, 0.006, 0))
 	var fin_holder := Node3D.new()
-	fin_holder.position = Vector3(0, 0.008, 0)
+	fin_holder.position = Vector3(0, 0.01, 0)
 	fin_holder.rotation_degrees.z = 90
 	root.add_child(fin_holder)
-	Toon.add(fin_holder, Toon.slab(fin, 0.008), body)
-	for k in range(2):
-		Toon.add(fin_holder, Toon.block(Vector3(0.008, 0.0086, 0.05)), trim, Vector3(0.045 + k * 0.016, 0, 0.13))
-	insignia(root, pal, 0.018, Vector3(0.0315, 0.004, 0.06), Vector3(0, 0, -90))
-	insignia(root, pal, 0.018, Vector3(-0.0315, 0.004, 0.06), Vector3(0, 0, 90))
+	Toon.add(fin_holder, Toon.wing(0.08, 0.088, 0.036, 0.011, 0.074, 0.05, 1.0, 0.5, 8, 7), body)
+	# Two painted stripes high on the fin (slightly fatter so they sit on it).
+	Toon.add(fin_holder, Toon.wing(0.012, 0.062, 0.058, 0.0135, 0.1045, 0.008, 1.0, 0.0, 3, 7), trim, Vector3(0.042, 0, 0))
+	Toon.add(fin_holder, Toon.wing(0.008, 0.05, 0.048, 0.013, 0.1175, 0.005, 1.0, 0.0, 3, 7), trim, Vector3(0.062, 0, 0))
+	insignia(root, pal, 0.016, Vector3(_fuse_r(0.05) * 1.0 + 0.0005, _fuse_y(0.05), 0.05), Vector3(0, 0, -90))
+	insignia(root, pal, 0.016, Vector3(-_fuse_r(0.05) - 0.0005, _fuse_y(0.05), 0.05), Vector3(0, 0, 90))
+	# Radio mast and pitot tube.
+	Toon.add(root, Toon.can(0.0008, 0.0016, 0.024, 6), dark, Vector3(0, _fuse_y(0.04) + _fuse_r(0.04) * 1.1 + 0.01, 0.04), Vector3(-15, 0, 0))
+	Toon.add(root, Toon.can(0.0012, 0.0012, 0.03, 6), metal, Vector3(0.14, -0.018, -0.05), Vector3(90, 0, 0))
 	# Guns under the wings: two per side.
 	var muzzles: Array = []
 	for side: float in [-1.0, 1.0]:
@@ -240,35 +273,32 @@ static func bomber(body_color: Color = Color(0.33, 0.37, 0.44)) -> Dictionary:
 	var root := Node3D.new()
 	root.name = "Bomber"
 	var o := 0.003
-	var body := Toon.mat(pal.body, 0.55, o)
+	var body := Toon.mat(pal.body, 0.38, o)
 	var dark := Toon.mat(DARK, 0.4, o)
 	var metal := Toon.mat(METAL, 0.6, o)
-	Toon.add(root, Toon.capsule(0.06, 0.48, 20), body, Vector3.ZERO, Vector3(90, 0, 0), Vector3(1, 1.08, 1))
-	Toon.add(root, Toon.can(0.02, 0.055, 0.16, 18), body, Vector3(0, 0.012, 0.29), Vector3(90, 0, 0))
+	Toon.add(root, Toon.lathe([Vector3(-0.24, 0.0, -0.004), Vector3(-0.236, 0.034, -0.003), Vector3(-0.212, 0.052, -0.001), Vector3(-0.16, 0.062, 0.0), Vector3(-0.05, 0.065, 0.002), Vector3(0.08, 0.062, 0.004), Vector3(0.18, 0.05, 0.008), Vector3(0.27, 0.033, 0.014), Vector3(0.34, 0.019, 0.02), Vector3(0.372, 0.012, 0.022), Vector3(0.38, 0.0, 0.022)], 24, Vector2(1.0, 1.08)), body)
+	# Panel seams and a cheat line along the fuselage.
+	for zb: float in [-0.12, 0.02, 0.16]:
+		Toon.add(root, Toon.torus(0.064 if zb < 0.1 else 0.053, 0.0018, 24), dark, Vector3(0, 0.003, zb), Vector3(90, 0, 0), Vector3(1, 1, 1.08))
 	Toon.add(root, Toon.ball(0.05, 16, 10), Toon.mat(GLASS, 0.9, o), Vector3(0, -0.005, -0.215), Vector3.ZERO, Vector3(1, 0.9, 1.0))
 	Toon.add(root, Toon.can(0.052, 0.052, 0.02, 20), Toon.mat(YELLOW, 0.5, o), Vector3(0, 0, -0.18), Vector3(90, 0, 0))
-	var wing := PackedVector2Array([Vector2(0.04, -0.07), Vector2(0.3, -0.04), Vector2(0.36, -0.025), Vector2(0.37, 0.0), Vector2(0.34, 0.02), Vector2(0.04, 0.05)])
-	Toon.add(root, Toon.slab(wing, 0.02), body, Vector3(0, 0.0, 0))
-	Toon.add(root, Toon.slab(Toon.mirror_x(wing), 0.02), body, Vector3(0, 0.0, 0))
 	for side: float in [-1.0, 1.0]:
-		insignia(root, pal, 0.04, Vector3(0.27 * side, 0.011, 0.0), Vector3.ZERO)
+		Toon.add(root, Toon.wing(0.375, 0.128, 0.05, 0.032, -0.074, 0.046, side, 0.2), body)
+		insignia(root, pal, 0.036, Vector3(0.29 * side, 0.0095, 0.004), Vector3.ZERO)
 	var engines: Array = []
 	for x in [-0.25, -0.13, 0.13, 0.25]:
 		var eng := pivot(root, "Engine", Vector3(x, 0.005, -0.06))
-		Toon.add(eng, Toon.capsule(0.032, 0.13, 14), metal)
-		eng.get_child(0).rotation_degrees.x = 90
+		Toon.add(eng, _nacelle(), body)
 		Toon.add(eng, Toon.torus(0.03, 0.005, 16), Toon.mat(YELLOW, 0.5, o), Vector3(0, 0, -0.06), Vector3(90, 0, 0))
 		var p := propeller(eng, pal, 0.07, Vector3(0, 0, -0.068))
 		engines.append({"node": eng, "prop": p.prop, "blur": p.blur, "hp": WarMath.ENGINE_HP})
-	var stab := PackedVector2Array([Vector2(0.01, 0.3), Vector2(0.14, 0.31), Vector2(0.15, 0.33), Vector2(0.14, 0.36), Vector2(0.01, 0.37)])
-	Toon.add(root, Toon.slab(stab, 0.012), body, Vector3(0, 0.03, 0))
-	Toon.add(root, Toon.slab(Toon.mirror_x(stab), 0.012), body, Vector3(0, 0.03, 0))
 	for side: float in [-1.0, 1.0]:
+		Toon.add(root, Toon.wing(0.15, 0.078, 0.05, 0.016, 0.296, 0.018, side, 0.3, 9, 7), body, Vector3(0, 0.03, 0))
 		var fh := Node3D.new()
-		fh.position = Vector3(0.14 * side, 0.03, 0)
+		fh.position = Vector3(0.142 * side, 0.0, 0)
 		fh.rotation_degrees.z = 90
 		root.add_child(fh)
-		Toon.add(fh, Toon.slab(PackedVector2Array([Vector2(-0.03, 0.29), Vector2(0.07, 0.31), Vector2(0.08, 0.36), Vector2(-0.03, 0.38)]), 0.01), Toon.mat(pal.trim, 0.4, o))
+		Toon.add(fh, Toon.wing(0.115, 0.092, 0.06, 0.014, 0.288, 0.018, 1.0, 0.35, 9, 7), Toon.mat(pal.trim, 0.4, o))
 	# Dorsal and tail turrets.
 	var top := pivot(root, "TopTurret", Vector3(0, 0.065, -0.05))
 	Toon.add(top, Toon.ball(0.03, 14, 8), Toon.mat(GLASS, 0.9, o), Vector3.ZERO, Vector3.ZERO, Vector3(1, 0.8, 1))
@@ -291,6 +321,13 @@ static func bomber(body_color: Color = Color(0.33, 0.37, 0.44)) -> Dictionary:
 	var bay := pivot(root, "BombBay", Vector3(0, -0.065, 0.02))
 	Toon.bake(root)
 	return {"root": root, "engines": engines, "top": top, "top_guns": top_guns, "tail": tail, "tail_guns": tail_guns, "bay": bay}
+
+
+static var _nacelle_mesh: ArrayMesh
+static func _nacelle() -> ArrayMesh:
+	if _nacelle_mesh == null:
+		_nacelle_mesh = Toon.lathe([Vector3(-0.07, 0.0, 0.0), Vector3(-0.069, 0.024, 0.0), Vector3(-0.058, 0.032, 0.0), Vector3(-0.02, 0.032, 0.0), Vector3(0.03, 0.026, -0.002), Vector3(0.07, 0.014, -0.004), Vector3(0.085, 0.0, -0.005)], 16)
+	return _nacelle_mesh
 
 
 # --- ground units -------------------------------------------------------------------------
@@ -778,9 +815,9 @@ static func raider() -> Dictionary:
 	# Armour: a bolted plate over the nose and slabs on each wing root.
 	Toon.add(root, Toon.block(Vector3(0.05, 0.022, 0.07)), plate, Vector3(0, 0.022, -0.07))
 	for side: float in [-1.0, 1.0]:
-		Toon.add(root, Toon.block(Vector3(0.06, 0.008, 0.05)), plate, Vector3(0.07 * side, 0.004, 0.0))
+		Toon.add(root, Toon.block(Vector3(0.06, 0.005, 0.05)), plate, Vector3(0.07 * side, 0.0, -0.004), Vector3(0, 0, 5.0 * side))
 		for k in range(2):
-			Toon.add(root, Toon.ball(0.0035, 6, 3), Toon.mat(METAL, 0.8, 0.0), Vector3((0.05 + k * 0.04) * side, 0.009, 0.018))
+			Toon.add(root, Toon.ball(0.0035, 6, 3), Toon.mat(METAL, 0.8, 0.0), Vector3((0.05 + k * 0.04) * side, 0.003 + k * 0.0035, 0.014))
 		# Extra guns and a rocket rail with two rockets.
 		Toon.add(root, Toon.can(0.004, 0.004, 0.06, 8), dark, Vector3(0.1 * side, -0.004, -0.06), Vector3(90, 0, 0))
 		Toon.add(root, Toon.block(Vector3(0.008, 0.006, 0.07)), dark, Vector3(0.13 * side, -0.014, -0.005))

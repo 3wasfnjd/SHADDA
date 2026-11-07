@@ -40,7 +40,7 @@ void light() {
 	vec3 tint = mix(shade.rgb, vec3(1.0), band);
 	DIFFUSE_LIGHT += tint * LIGHT_COLOR * ATTENUATION * 0.9;
 	vec3 h = normalize(LIGHT + VIEW);
-	float s = smoothstep(0.93, 0.95, dot(NORMAL, h)) * gloss;
+	float s = smoothstep(0.982, 0.992, dot(NORMAL, h)) * gloss;
 	SPECULAR_LIGHT += vec3(s) * LIGHT_COLOR * ATTENUATION * 0.6;
 }
 """
@@ -250,6 +250,77 @@ static func slab(outline: PackedVector2Array, thickness: float) -> ArrayMesh:
 		else:
 			for v in [t0, b1, t1, t0, b0, b1]:
 				st.add_vertex(v)
+	st.generate_normals()
+	return st.commit()
+
+
+## A smooth body of revolution along Z: `profile` is [Vector3(z, radius, y_offset)]
+## from front to back (radius 0 at an end closes it). `squash` scales the
+## cross-section (x, y). Indexed, so normals (and the ink outline) are smooth.
+static func lathe(profile: Array, segs: int = 20, squash: Vector2 = Vector2.ONE) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rows := profile.size()
+	for i in range(rows):
+		var p: Vector3 = profile[i]
+		for k in range(segs + 1):
+			var a := TAU * k / segs
+			st.set_uv(Vector2(float(k) / segs, float(i) / (rows - 1)))
+			st.add_vertex(Vector3(cos(a) * p.y * squash.x, sin(a) * p.y * squash.y + p.z, p.x))
+	for i in range(rows - 1):
+		for k in range(segs):
+			var a := i * (segs + 1) + k
+			var b := a + segs + 1
+			st.add_index(a)
+			st.add_index(b)
+			st.add_index(a + 1)
+			st.add_index(a + 1)
+			st.add_index(b)
+			st.add_index(b + 1)
+	st.generate_normals()
+	return st.commit()
+
+
+## A lofted wing panel growing along +X (or -X with side = -1) from x = 0:
+## a flat-bottomed cartoon airfoil, thick at the root, rounded (elliptical)
+## tip, optional sweep. Chord runs along +Z (front = -Z). `le` is the leading
+## edge z at the root. Indexed for smooth shading and a clean outline.
+static func wing(span: float, root_chord: float, tip_chord: float, thick: float, le: float = 0.0, sweep: float = 0.0, side: float = 1.0, tip_round: float = 0.35, stations: int = 12, pts: int = 9) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var ring := 2 * pts - 1
+	for i in range(stations):
+		var u := float(i) / (stations - 1)
+		var chord := lerpf(root_chord, tip_chord, u)
+		var tf := 1.0
+		var s0 := 1.0 - tip_round
+		if u > s0 and tip_round > 0.0:
+			var q := (u - s0) / tip_round
+			tf = sqrt(maxf(1.0 - q * q, 0.0))
+		tf = maxf(tf, 0.04)
+		var c := chord * tf
+		var mid := le + sweep * u + chord * 0.3      # chord shrinks about the 30% line
+		var z0 := mid - c * 0.3
+		var t := thick * lerpf(1.0, 0.55, u) * tf
+		var x := span * u * side
+		for j in range(ring):
+			# upper surface TE→LE then lower LE→TE, cosine spaced.
+			var k := j if j < pts else ring - 1 - j
+			var xc := 0.5 * (1.0 + cos(PI * float(k) / (pts - 1)))
+			var half := 5.0 * (0.2969 * sqrt(xc) - 0.126 * xc - 0.3516 * xc * xc + 0.2843 * xc * xc * xc - 0.1036 * xc * xc * xc * xc)
+			var y := t * half * (1.0 if j < pts else -0.55)
+			st.set_uv(Vector2(u, float(j) / ring))
+			st.add_vertex(Vector3(x, y, z0 + xc * c))
+	for i in range(stations - 1):
+		for j in range(ring - 1):
+			var a := i * ring + j
+			var b := a + ring
+			if side < 0.0:
+				st.add_index(a); st.add_index(b); st.add_index(a + 1)
+				st.add_index(a + 1); st.add_index(b); st.add_index(b + 1)
+			else:
+				st.add_index(a); st.add_index(a + 1); st.add_index(b)
+				st.add_index(a + 1); st.add_index(b + 1); st.add_index(b)
 	st.generate_normals()
 	return st.commit()
 

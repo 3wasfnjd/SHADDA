@@ -153,7 +153,7 @@ func _ready() -> void:
 		var s = load("res://assets/audio/" + ("tank_engine" if kind in ["tank", "truck"] else "enemy_engine") + ".wav")
 		if s is AudioStreamWAV:
 			(s as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
-			(s as AudioStreamWAV).loop_end = (s as AudioStreamWAV).data.size() / 2
+			(s as AudioStreamWAV).loop_end = int((s as AudioStreamWAV).get_length() * (s as AudioStreamWAV).mix_rate)
 		_engine.stream = s
 		_engine.unit_size = 0.7 if not kind in ["bomber", "gunship"] else 1.4
 		_engine.max_distance = 7.0

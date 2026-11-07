@@ -65,7 +65,7 @@ jobs:
           timeout 200 xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --xr-mode off --audio-driver Dummy --rendering-method gl_compatibility --resolution 800x600 -s tools/look.gd -- build/previews/models
           ls -R build/previews
       - name: Export native ARM64 Android APK
-        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SAQR-Quest-v1.4.1.apk
+        run: godot --headless --xr-mode off --path . --install-android-build-template --export-debug Quest build/SAQR-Quest-v1.5.0.apk
       - name: Verify manifest, ABI, splash, and certificate
         run: python3 tools/verify_apk.py
       - name: Release-signed APK for the Meta store (only when the owner has added a release key)
@@ -78,30 +78,30 @@ jobs:
           export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/saqr-release.keystore"
           export GODOT_ANDROID_KEYSTORE_RELEASE_USER=saqr
           export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$KEYSTORE_PASS"
-          godot --headless --xr-mode off --path . --export-release Quest build/SAQR-Quest-v1.4.1-store.apk
-          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --print-certs build/SAQR-Quest-v1.4.1-store.apk
+          godot --headless --xr-mode off --path . --export-release Quest build/SAQR-Quest-v1.5.0-store.apk
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --print-certs build/SAQR-Quest-v1.5.0-store.apk
           rm -f "$RUNNER_TEMP/saqr-release.keystore"
       - name: Publish package report as a check annotation
         run: |
           echo "::notice title=package-report::$(python3 -c 'import json;print(json.dumps(json.load(open("build/package-report.json"))))')"
-          echo "::notice title=apk-sha256::$(cat build/SAQR-Quest-v1.4.1.apk.sha256)"
+          echo "::notice title=apk-sha256::$(cat build/SAQR-Quest-v1.5.0.apk.sha256)"
       - name: Publish APK as a GitHub pre-release (direct download, GitHub only — never Meta)
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="saqr-v1.4.1"
+          TAG="saqr-v1.5.0"
           NOTES="بناء آلي من ${GITHUB_SHA}. تم البناء وفحص الحزمة ونجاح الاختبارات الآلية فقط؛ لم يُثبّت أو يُختبر على Quest. توقيع تطويري."
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes "$NOTES" --prerelease
           else
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "SAQR v1.4.1 — صقر" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "SAQR v1.5.0 — صقر" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
           fi
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/SAQR-Quest-v1.4.1.apk build/SAQR-Quest-v1.4.1.apk.sha256 build/package-report.json build/versions.txt
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber build/SAQR-Quest-v1.5.0.apk build/SAQR-Quest-v1.5.0.apk.sha256 build/package-report.json build/versions.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: SAQR-Quest-v1.4.1
+          name: SAQR-Quest-v1.5.0
           path: build/
           if-no-files-found: error
           retention-days: 14
