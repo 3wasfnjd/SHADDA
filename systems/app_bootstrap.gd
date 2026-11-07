@@ -164,13 +164,11 @@ func apply_settings() -> void:
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), _db(float(Profile.get_s("sfx"))))
 	var q := str(Profile.get_s("quality"))
 	var vp := get_viewport()
-	# Kept conservative for the headset: 4× MSAA only on Ultra, native resolution.
-	# Same safe path as v0.6 (which ran on the headset): project MSAA, native
-	# resolution, runtime foveation left to the system. Ultra only adds 4× MSAA.
-	if q == "ultra":
-		vp.msaa_3d = Viewport.MSAA_4X
-	elif vp.msaa_3d != Viewport.MSAA_2X:
-		vp.msaa_3d = Viewport.MSAA_2X
+	# Native resolution, runtime foveation left to the system. 4× MSAA on High
+	# and Ultra (the boards' edges and thin lines crawl at 2×); 2× on Balanced.
+	var want_msaa := Viewport.MSAA_2X if q == "balanced" else Viewport.MSAA_4X
+	if vp.msaa_3d != want_msaa:
+		vp.msaa_3d = want_msaa
 	Debris.effects_high = str(Profile.get_s("effects")) == "high"
 	Fx.budget = 60 if Debris.effects_high else 35
 	if plane:

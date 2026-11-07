@@ -58,7 +58,7 @@ func setup(w: float, h: float, title: String = "", header: Color = HEADER, board
 	shape(self, rrect(w + 0.016, h + 0.016, 0.026), Vector3(0, 0, -0.004), pal.edge, 0.002)
 	shape(self, rrect(w, h, 0.02), Vector3(0, 0, -0.002), pal.bg, 0.002)
 	# Thin printed border line inside the paper.
-	_frame_line(w - 0.03, h - 0.03, 0.0015, fade(pal.line, 0.8))
+	_frame_line(w - 0.034, h - 0.034, 0.0035, fade(pal.line, 0.7))
 	match style:
 		"map":
 			_grid(w, h, 0.06)
@@ -92,14 +92,14 @@ func _frame_line(w: float, h: float, t: float, c: Color) -> void:
 
 
 func _grid(w: float, h: float, step: float) -> void:
-	var c: Color = fade(pal.line, pal.line.a * 0.7)
+	var c: Color = fade(pal.line, pal.line.a * 0.45)
 	var x := -w * 0.5 + step
 	while x < w * 0.5 - 0.01:
-		shape(self, PackedVector2Array([Vector2(-0.0007, -h * 0.48), Vector2(0.0007, -h * 0.48), Vector2(0.0007, h * 0.48), Vector2(-0.0007, h * 0.48)]), Vector3(x, 0, 0.0004), c, 0.0003)
+		shape(self, PackedVector2Array([Vector2(-0.0015, -h * 0.48), Vector2(0.0015, -h * 0.48), Vector2(0.0015, h * 0.48), Vector2(-0.0015, h * 0.48)]), Vector3(x, 0, 0.0004), c, 0.0003)
 		x += step
 	var y := -h * 0.5 + step
 	while y < h * 0.5 - 0.01:
-		shape(self, PackedVector2Array([Vector2(-w * 0.48, -0.0007), Vector2(w * 0.48, -0.0007), Vector2(w * 0.48, 0.0007), Vector2(-w * 0.48, 0.0007)]), Vector3(0, y, 0.0004), c, 0.0003)
+		shape(self, PackedVector2Array([Vector2(-w * 0.48, -0.0015), Vector2(w * 0.48, -0.0015), Vector2(w * 0.48, 0.0015), Vector2(-w * 0.48, 0.0015)]), Vector3(0, y, 0.0004), c, 0.0003)
 		y += step
 
 
@@ -115,11 +115,11 @@ func _ribbon(title: String, y: float, bw: float, color: Color) -> void:
 		shape(self, tail, Vector3(x0, y - 0.016, 0.001), dark, 0.0015)
 	shape(self, PackedVector2Array([Vector2(-bw * 0.5, -bh * 0.5), Vector2(bw * 0.5, -bh * 0.5), Vector2(bw * 0.5, bh * 0.5), Vector2(-bw * 0.5, bh * 0.5)]), Vector3(0, y, 0.003), color, 0.002)
 	# Stitched edges.
-	for yy: float in [bh * 0.5 - 0.008, -bh * 0.5 + 0.008]:
-		var n := int(bw / 0.016)
+	for yy: float in [bh * 0.5 - 0.01, -bh * 0.5 + 0.01]:
+		var n := int(bw / 0.028)
 		for i in range(n):
-			var x := -bw * 0.5 + 0.008 + i * 0.016
-			shape(self, PackedVector2Array([Vector2(-0.004, -0.0008), Vector2(0.004, -0.0008), Vector2(0.004, 0.0008), Vector2(-0.004, 0.0008)]), Vector3(x, y + yy, 0.0045), Color(1, 0.9, 0.75, 0.6), 0.0004)
+			var x := -bw * 0.5 + 0.014 + i * 0.028
+			shape(self, PackedVector2Array([Vector2(-0.008, -0.0016), Vector2(0.008, -0.0016), Vector2(0.008, 0.0016), Vector2(-0.008, 0.0016)]), Vector3(x, y + yy, 0.0045), color.lightened(0.35), 0.0004)
 	var l := label(title, Vector2(0, y + 0.004), 84, TEXT, "title")
 	l.position.z = 0.007
 

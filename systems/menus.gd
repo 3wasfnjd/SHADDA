@@ -248,7 +248,7 @@ func _missions() -> void:
 			p.label(str(i + 1), Vector2(0, -0.024), 40, Panel3D.TEXT, "title", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
 			for k in range(3):
 				p.icon("star", Vector2(c.x + (k - 1) * 0.024, c.y - 0.06), 0.02, Color(0.95, 0.62, 0.06) if k < n else p.fade(p.dim, 0.35))
-			p.label(Missions.text(m, "title"), Vector2(c.x, c.y - 0.088), 34, p.ink, "bold")
+			p.label(Missions.text(m, "title"), Vector2(c.x, c.y - 0.09), 40, p.ink, "bold")
 			if m.get("dusk", false):
 				p.label("☾", Vector2(c.x + p.sx(0.055), c.y + 0.04), 40, p.dim, "bold")
 		else:

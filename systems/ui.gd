@@ -7,9 +7,16 @@ static var _fonts: Dictionary = {}
 
 
 ## "title" (Lalezar), "body" (Changa 600) or "bold" (Changa 800).
+## Glyphs are multichannel signed-distance fields: in the headset text is
+## always shrunk and moving with your head, and plain bitmap glyphs (no
+## mipmaps) shimmer and break up. MSDF stays sharp at any size and distance.
 static func font(kind: String = "bold") -> Font:
 	if not _fonts.has(kind):
 		var f := FontFile.new()
+		f.multichannel_signed_distance_field = true
+		f.msdf_pixel_range = 48
+		f.msdf_size = 64
+		f.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
 		if kind == "title":
 			f.load_dynamic_font("res://assets/fonts/Lalezar-Regular.ttf")
 			_fonts[kind] = f
@@ -29,7 +36,7 @@ static func number(text: String, size: int, color: Color, billboard: bool = true
 	l.font_size = size
 	l.pixel_size = 0.001
 	l.modulate = color
-	l.outline_size = maxi(8, size / 5)
+	l.outline_size = clampi(size / 5, 8, 22)
 	l.outline_modulate = Toon.INK
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED if billboard else BaseMaterial3D.BILLBOARD_DISABLED
 	l.render_priority = 20
