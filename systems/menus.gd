@@ -147,37 +147,46 @@ func _tick_haptic(amp: float, dur: float) -> void:
 		hand.trigger_haptic_pulse("haptic", 0.0, amp, dur, 0.0)
 
 
-func _new(w: float, h: float, title: String = "", header: Color = Panel3D.HEADER) -> Panel3D:
+func _new(w: float, h: float, title: String = "", header: Color = Panel3D.HEADER, style: String = "poster") -> Panel3D:
 	panel = Panel3D.new()
 	add_child(panel)
-	panel.setup(w, h, title, header)
+	panel.setup(w, h, title, header, style)
 	return panel
 
 
 func _wallet(p: Panel3D, pos: Vector2) -> void:
-	p.icon("coin", Vector2(pos.x + p.sx(-0.115), pos.y), 0.032, Panel3D.GOLD)
-	p.label("%d" % int(Profile.progress.coins), Vector2(pos.x + p.sx(-0.06), pos.y), 50, Panel3D.GOLD, "bold")
-	p.icon("star", Vector2(pos.x + p.sx(0.04), pos.y), 0.032, Panel3D.GOLD)
-	p.label("%d/%d" % [Profile.total_stars(), Missions.LIST.size() * 3], Vector2(pos.x + p.sx(0.1), pos.y), 50, Panel3D.TEXT, "bold")
+	p.icon("coin", Vector2(pos.x + p.sx(-0.115), pos.y), 0.032, p.pal.star)
+	p.label("%d" % int(Profile.progress.coins), Vector2(pos.x + p.sx(-0.06), pos.y), 50, p.accent, "bold")
+	p.icon("star", Vector2(pos.x + p.sx(0.04), pos.y), 0.032, p.pal.star)
+	p.label("%d/%d" % [Profile.total_stars(), Missions.LIST.size() * 3], Vector2(pos.x + p.sx(0.1), pos.y), 50, p.ink, "bold")
 
 
 # --- screens --------------------------------------------------------------------------------
 
 func _main() -> void:
-	var p := _new(0.74, 0.72)
-	p.label(Lang.t("game"), Vector2(0, 0.24), 310, Panel3D.GOLD, "title")
-	p.label("SAQR" if Lang.code() == "ar" else "صقر", Vector2(0, 0.145), 60, Panel3D.HEADER.lightened(0.25), "title")
-	p.label(Lang.t("tagline"), Vector2(0, 0.1), 46, Panel3D.DIM)
-	var y := 0.035
-	var bs := Vector2(0.44, 0.064)
+	var p := _new(0.76, 0.78)
+	p.sunburst(Vector2(0, 0.25), 0.5, 22, 0.09)
+	# Shadowed poster title.
+	var sh := p.label(Lang.t("game"), Vector2(0.006, 0.244), 300, Color(0.2, 0.24, 0.16, 0.85), "title")
+	sh.position.z = 0.002
+	p.label(Lang.t("game"), Vector2(0, 0.25), 300, Panel3D.HEADER, "title")
+	p.label("—  %s  —" % ("SAQR" if Lang.code() == "ar" else "صقر"), Vector2(0, 0.15), 52, p.ink, "title")
+	p.label(Lang.t("tagline"), Vector2(0, 0.11), 42, p.dim)
+	var mini := Models.player_plane(0.0012)
+	var model: Node3D = mini.root
+	model.scale = Vector3.ONE * 0.42
+	model.set_meta("prop", mini.prop)
+	p.orbit(model, Vector3(0, 0.25, 0.09), Vector2(0.3, 0.07))
+	var y := 0.045
+	var bs := Vector2(0.46, 0.066)
 	var nxt := _next_mission()
-	var fly := p.button("%s  ·  %d" % [Lang.t("fly"), nxt + 1], Vector2(0, y), bs, func(): _start(nxt), "primary", "play", 56)
+	var fly := p.button("%s  ·  %d" % [Lang.t("fly"), nxt + 1], Vector2(0, y), Vector2(0.5, 0.078), func(): _start(nxt), "primary", "play", 60)
 	fly.hint = Missions.text(Missions.get_m(nxt), "title")
-	p.button(Lang.t("missions_map"), Vector2(0, y - 0.074), bs, func(): open("missions"), "normal", "rings")
-	p.button(Lang.t("hangar"), Vector2(0, y - 0.148), bs, func(): open("hangar"), "normal", "plane")
-	p.button(Lang.t("settings"), Vector2(0, y - 0.222), bs, func(): open("settings"), "normal", "gear")
-	p.button(Lang.t("controls"), Vector2(0, y - 0.29), Vector2(0.44, 0.052), func(): open("controls"), "ghost", "stick", 44)
-	_wallet(p, Vector2(0, -0.325))
+	p.button(Lang.t("missions_map"), Vector2(0, y - 0.088), bs, func(): open("missions"), "normal", "rings")
+	p.button(Lang.t("hangar"), Vector2(0, y - 0.164), bs, func(): open("hangar"), "normal", "plane")
+	p.button(Lang.t("settings"), Vector2(0, y - 0.24), bs, func(): open("settings"), "normal", "gear")
+	p.button(Lang.t("controls"), Vector2(0, y - 0.31), Vector2(0.46, 0.054), func(): open("controls"), "ghost", "stick", 44)
+	_wallet(p, Vector2(0, -0.35))
 
 
 ## The first mission not finished yet (or the first, once all are done).
@@ -189,69 +198,100 @@ func _next_mission() -> int:
 	return 0
 
 
+## The campaign as an operations map: pins along a dashed flight route.
 func _missions() -> void:
-	var p := _new(1.0, 0.86, Lang.t("campaign"))
+	var p := _new(1.02, 0.88, Lang.t("campaign"), Panel3D.HEADER, "map")
 	var ids := Missions.ids()
+	var nxt := _next_mission()
+	var pts: Array[Vector2] = []
 	for i in range(Missions.LIST.size()):
-		var m: Dictionary = Missions.LIST[i]
-		var col := i % 4
 		var row := i / 4
-		var c := Vector2(p.sx(-0.351 + col * 0.234), 0.2 - row * 0.178)
+		var col := i % 4
+		if row % 2 == 1:
+			col = 3 - col
+		var wob := sin(i * 1.7) * 0.022
+		pts.append(Vector2(p.sx(-0.36 + col * 0.24), 0.235 - row * 0.2 + wob))
+	# Dashed route between pins (curving down at the row ends).
+	for i in range(pts.size() - 1):
+		var a := pts[i]
+		var b := pts[i + 1]
+		var done := bool(Profile.mission(ids[i]).get("done", false))
+		var dcol := Color(0.72, 0.14, 0.1) if done else p.fade(Color(0.3, 0.24, 0.16), 0.55)
+		var ctrl := (a + b) * 0.5
+		if absf(a.y - b.y) > 0.1:
+			ctrl += Vector2(signf(a.x) * 0.08, 0)
+		var n := 9
+		for k in range(n):
+			if k % 2 == 1:
+				continue
+			var t0 := float(k) / n
+			var t1 := float(k + 1) / n
+			var q0 := a.lerp(ctrl, t0).lerp(ctrl.lerp(b, t0), t0)
+			var q1 := a.lerp(ctrl, t1).lerp(ctrl.lerp(b, t1), t1)
+			Panel3D.shape(p, Panel3D.bar(q0, q1, 0.006), Vector3(0, 0, 0.0005), dcol, 0.0005)
+	for i in range(pts.size()):
+		var m: Dictionary = Missions.LIST[i]
+		var c := pts[i]
 		var open_ok := Profile.unlocked(i, ids)
 		var idx := i
-		var w := p.button("", c, Vector2(0.218, 0.165), func(): open("brief", {"index": idx}), "normal", "", 40, open_ok)
+		var w := p.button("", c, Vector2(0.088, 0.088), func(): open("brief", {"index": idx}), "pin", "", 40, open_ok)
 		var node: Node3D = w.node
-		w.hint = Missions.text(m, "title") if open_ok else Lang.t("locked_hint")
-		p.label(str(i + 1), Vector2(p.sx(-0.082), 0.052), 58, Panel3D.GOLD if open_ok else Panel3D.DIM, "title", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
+		w.hint = "%d · %s" % [i + 1, Missions.text(m, "title")] if open_ok else Lang.t("locked_hint")
+		var n := Profile.stars_of(m.id)
+		if i == nxt and open_ok:
+			w.color = Panel3D.PRIMARY
+			p.ring(c, 0.07, 0.006, p.accent, true)
+		elif n > 0:
+			w.color = Color(0.3, 0.36, 0.22)
 		if open_ok:
-			p.icon(m.icon, Vector2(0, 0.03), 0.046, Panel3D.TEXT, node)
-			p.label(Missions.text(m, "title"), Vector2(0, -0.022), 42, Panel3D.TEXT, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
-			var n := Profile.stars_of(m.id)
+			p.icon(m.icon, Vector2(0, 0.008), 0.036, Panel3D.TEXT, node)
+			p.label(str(i + 1), Vector2(0, -0.024), 40, Panel3D.TEXT, "title", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
 			for k in range(3):
-				p.icon("star", Vector2((k - 1) * 0.026, -0.058), 0.022, Panel3D.GOLD if k < n else Color(0.3, 0.33, 0.38), node)
+				p.icon("star", Vector2(c.x + (k - 1) * 0.024, c.y - 0.06), 0.02, Color(0.95, 0.62, 0.06) if k < n else p.fade(p.dim, 0.35))
+			p.label(Missions.text(m, "title"), Vector2(c.x, c.y - 0.088), 34, p.ink, "bold")
 			if m.get("dusk", false):
-				p.label("☾", Vector2(p.sx(0.08), 0.055), 44, Panel3D.DIM, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
+				p.label("☾", Vector2(c.x + p.sx(0.055), c.y + 0.04), 40, p.dim, "bold")
 		else:
-			p.icon("lock", Vector2(0, 0.012), 0.05, Panel3D.DIM, node)
-			p.label(Lang.t("locked"), Vector2(0, -0.045), 38, Panel3D.DIM, "bold", HORIZONTAL_ALIGNMENT_CENTER, 0.0, node)
-	p.button(Lang.t("back"), Vector2(p.sx(-0.38), -0.375), Vector2(0.18, 0.06), func(): open("main"), "ghost", "back", 44)
-	_wallet(p, Vector2(p.sx(0.3), -0.375))
-	_hint = p.label("", Vector2(0, -0.375), 42, Panel3D.DIM)
+			p.icon("lock", Vector2(0, 0), 0.036, Color(0.85, 0.82, 0.74), node)
+			p.label(str(i + 1), Vector2(c.x, c.y - 0.066), 34, p.dim, "bold")
+	p.button(Lang.t("back"), Vector2(p.sx(-0.39), -0.385), Vector2(0.18, 0.06), func(): open("main"), "ghost", "back", 44)
+	_wallet(p, Vector2(p.sx(0.31), -0.385))
+	_hint = p.label(Missions.text(Missions.get_m(nxt), "title"), Vector2(0, -0.385), 42, p.accent, "bold")
 
 
 func _brief(i: int) -> void:
 	var m := Missions.get_m(i)
 	var p := _new(0.92, 0.66, "%s %d · %s" % [Lang.t("mission"), i + 1, Missions.text(m, "title")])
-	p.label(Missions.text(m, "brief"), Vector2(p.sx(-0.43), 0.15), 44, Panel3D.TEXT, "body", p.start_align(), 0.56)
-	p.label(Lang.t("objectives"), Vector2(p.sx(-0.43), 0.045), 50, Panel3D.GOLD, "bold", p.start_align(), 0.56)
+	p.label(Missions.text(m, "brief"), Vector2(p.sx(-0.43), 0.15), 44, p.ink, "body", p.start_align(), 0.56)
+	p.label(Lang.t("objectives"), Vector2(p.sx(-0.43), 0.045), 50, p.accent, "bold", p.start_align(), 0.56)
 	var have := Profile.stars_of(m.id)
 	var lines := [Lang.t("obj_complete"), Missions.text(m, "s2"), Missions.text(m, "s3")]
 	for k in range(3):
 		var y := -0.015 - k * 0.058
 		for st in range(k + 1):
-			p.icon("star", Vector2(p.sx(-0.415 + st * 0.03), y), 0.026, Panel3D.GOLD if have > k else Color(0.36, 0.4, 0.46))
-		p.label(lines[k], Vector2(p.sx(-0.31), y), 42, Panel3D.TEXT if have <= k else Panel3D.DIM, "body", p.start_align(), 0.4)
+			p.icon("star", Vector2(p.sx(-0.415 + st * 0.03), y), 0.026, p.pal.star if have > k else p.fade(p.dim, 0.4))
+		p.label(lines[k], Vector2(p.sx(-0.31), y), 42, p.ink if have <= k else p.dim, "body", p.start_align(), 0.4)
 	# Loadout box on the other side.
 	var bx := p.sx(0.31)
-	Panel3D.shape(p, Panel3D.rrect(0.24, 0.36, 0.02), Vector3(bx, 0.03, 0.0), Color(0.11, 0.14, 0.2), 0.002)
-	p.label(Lang.t("loadout"), Vector2(bx, 0.18), 46, Panel3D.GOLD, "bold")
+	Panel3D.shape(p, Panel3D.rrect(0.24, 0.36, 0.02), Vector3(bx, 0.03, 0.0), p.inset, 0.002)
+	p.label(Lang.t("loadout"), Vector2(bx, 0.18), 46, p.accent, "bold")
 	var gun: String = Profile.progress.get("gun", "twin")
 	var sp: String = Profile.progress.get("special", "bombs")
-	p.icon(gun, Vector2(bx + p.sx(-0.085), 0.12), 0.04, Panel3D.TEXT)
-	p.label(Lang.t(gun), Vector2(bx + p.sx(0.02), 0.12), 38, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER)
-	p.icon(sp, Vector2(bx + p.sx(-0.085), 0.065), 0.04, Panel3D.TEXT)
-	p.label(Lang.t(sp), Vector2(bx + p.sx(0.02), 0.065), 38, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER)
+	p.icon(gun, Vector2(bx + p.sx(-0.085), 0.12), 0.04, p.ink)
+	p.label(Lang.t(gun), Vector2(bx + p.sx(0.02), 0.12), 38, p.ink, "body", HORIZONTAL_ALIGNMENT_CENTER)
+	p.icon(sp, Vector2(bx + p.sx(-0.085), 0.065), 0.04, p.ink)
+	p.label(Lang.t(sp), Vector2(bx + p.sx(0.02), 0.065), 38, p.ink, "body", HORIZONTAL_ALIGNMENT_CENTER)
 	var ty := 0.01
 	for tr in Profile.TRACKS:
-		p.label(Lang.t(tr), Vector2(bx + p.sx(-0.03), ty), 34, Panel3D.DIM, "body", HORIZONTAL_ALIGNMENT_CENTER)
+		p.label(Lang.t(tr), Vector2(bx + p.sx(-0.03), ty), 34, p.dim, "body", HORIZONTAL_ALIGNMENT_CENTER)
 		for k in range(3):
-			Panel3D.shape(p, Panel3D.rrect(0.014, 0.014, 0.004), Vector3(bx + p.sx(0.055 + k * 0.02), ty, 0.003), Panel3D.BTN_HOVER if k < Profile.level(tr) else Color(0.25, 0.28, 0.34), 0.002)
+			Panel3D.shape(p, Panel3D.rrect(0.014, 0.014, 0.004), Vector3(bx + p.sx(0.055 + k * 0.02), ty, 0.003), p.accent if k < Profile.level(tr) else p.fade(p.dim, 0.35), 0.002)
 		ty -= 0.036
 	var best := int(Profile.mission(m.id).get("best", 0))
 	if best > 0:
-		p.label("%s  %d" % [Lang.t("best"), best], Vector2(bx, -0.12), 38, Panel3D.DIM)
+		p.label("%s  %d" % [Lang.t("best"), best], Vector2(bx, -0.12), 38, p.dim)
 	var diff := str(Profile.get_s("difficulty"))
-	p.label("%s: %s" % [Lang.t("difficulty"), Lang.t(diff)], Vector2(p.sx(-0.43), -0.19), 38, Panel3D.DIM, "body", p.start_align(), 0.56)
+	p.label("%s: %s" % [Lang.t("difficulty"), Lang.t(diff)], Vector2(p.sx(-0.43), -0.19), 38, p.dim, "body", p.start_align(), 0.56)
 	p.button(Lang.t("start"), Vector2(p.sx(-0.24), -0.27), Vector2(0.3, 0.075), func(): _start(i), "primary", "play", 60)
 	p.button(Lang.t("hangar"), Vector2(p.sx(0.06), -0.27), Vector2(0.2, 0.065), func(): open("hangar", {"back": "brief", "index": i}), "normal", "plane", 44)
 	p.button(Lang.t("back"), Vector2(p.sx(0.31), -0.27), Vector2(0.17, 0.065), func(): open("missions"), "ghost", "back", 44)
@@ -268,7 +308,7 @@ func _start(i: int) -> void:
 
 
 func _hangar(tab: String) -> void:
-	var p := _new(1.04, 0.74, Lang.t("hangar"))
+	var p := _new(1.04, 0.74, Lang.t("hangar"), Panel3D.HEADER, "blueprint")
 	_wallet(p, Vector2(p.sx(-0.36), 0.225))
 	var tabs := [["upgrades", Lang.t("upgrades")], ["weapons", Lang.t("weapons")]]
 	p.choice(Vector2(p.sx(0.27), 0.225), Vector2(0.4, 0.06), tabs, tab, func(v): open("hangar", {"tab": v, "back": args.get("back", ""), "index": args.get("index", 0)}, true))
@@ -276,12 +316,12 @@ func _hangar(tab: String) -> void:
 		var y := 0.13
 		for tr in Profile.TRACKS:
 			var x0 := p.sx(-0.44)
-			p.icon(tr, Vector2(x0, y), 0.05, Panel3D.TEXT)
-			p.label(Lang.t(tr), Vector2(p.sx(-0.4), y + 0.016), 50, Panel3D.TEXT, "bold", p.start_align(), 0.42)
-			p.label(Lang.t(tr + "_d"), Vector2(p.sx(-0.4), y - 0.022), 36, Panel3D.DIM, "body", p.start_align(), 0.42)
+			p.icon(tr, Vector2(x0, y), 0.05, p.ink)
+			p.label(Lang.t(tr), Vector2(p.sx(-0.4), y + 0.016), 50, p.ink, "bold", p.start_align(), 0.42)
+			p.label(Lang.t(tr + "_d"), Vector2(p.sx(-0.4), y - 0.022), 36, p.dim, "body", p.start_align(), 0.42)
 			var lv := Profile.level(tr)
 			for k in range(3):
-				Panel3D.shape(p, Panel3D.rrect(0.03, 0.03, 0.008), Vector3(p.sx(0.1 + k * 0.04), y, 0.003), Panel3D.BTN_HOVER if k < lv else Color(0.25, 0.28, 0.34), 0.002)
+				Panel3D.shape(p, Panel3D.rrect(0.03, 0.03, 0.008), Vector3(p.sx(0.1 + k * 0.04), y, 0.003), p.accent if k < lv else p.fade(p.dim, 0.35), 0.002)
 			var price := Profile.price(tr)
 			var track: String = tr
 			if price < 0:
@@ -292,10 +332,10 @@ func _hangar(tab: String) -> void:
 			p.divider(y - 0.048, 0.94)
 			y -= 0.097
 	else:
-		p.label(Lang.t("gun_slot"), Vector2(p.sx(-0.47), 0.16), 42, Panel3D.GOLD, "bold", p.start_align(), 0.5)
+		p.label(Lang.t("gun_slot"), Vector2(p.sx(-0.47), 0.16), 42, p.accent, "bold", p.start_align(), 0.5)
 		for k in range(Profile.GUNS.size()):
 			_item_card(p, Profile.GUNS[k], Vector2(p.sx(-0.354 + k * 0.236), 0.1), Vector2(0.226, 0.085))
-		p.label(Lang.t("special_slot"), Vector2(p.sx(-0.47), 0.035), 42, Panel3D.GOLD, "bold", p.start_align(), 0.5)
+		p.label(Lang.t("special_slot"), Vector2(p.sx(-0.47), 0.035), 42, p.accent, "bold", p.start_align(), 0.5)
 		var items := Profile.SPECIALS + ["flares"]
 		for k in range(items.size()):
 			var row := k / 4
@@ -304,7 +344,7 @@ func _hangar(tab: String) -> void:
 	var back_to := str(args.get("back", ""))
 	var idx := int(args.get("index", 0))
 	p.button(Lang.t("back"), Vector2(p.sx(-0.4), -0.315), Vector2(0.18, 0.06), func(): open("brief", {"index": idx}) if back_to == "brief" else open(back_to if back_to != "" else "main", {}, true), "ghost", "back", 44)
-	_hint = p.label(Lang.t("c_point"), Vector2(p.sx(0.1), -0.315), 38, Panel3D.DIM, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.62)
+	_hint = p.label(Lang.t("c_point"), Vector2(p.sx(0.1), -0.315), 38, p.dim, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.62)
 
 
 func _item_card(p: Panel3D, item: String, c: Vector2, s: Vector2) -> void:
@@ -373,7 +413,7 @@ func _settings(tab: String) -> void:
 	for r in rows:
 		var kind: String = r[1]
 		if r[0] != "":
-			p.label(r[0], Vector2(p.sx(-0.46), y), 48, Panel3D.TEXT, "bold", p.start_align(), 0.4)
+			p.label(r[0], Vector2(p.sx(-0.46), y), 48, p.ink, "bold", p.start_align(), 0.4)
 		var cx := p.sx(0.2)
 		match kind:
 			"choice":
@@ -386,7 +426,7 @@ func _settings(tab: String) -> void:
 				var v0 := (float(Profile.get_s(key2)) - lo) / (hi - lo)
 				p.slider(Vector2(cx - p.sx(0.04), y), Vector2(0.38, 0.03), v0, func(v): _set_live(key2, lo + v * (hi - lo)))
 			"note":
-				p.label(r[2], Vector2(cx, y + 0.02), 36, Panel3D.DIM, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.52)
+				p.label(r[2], Vector2(cx, y + 0.02), 36, p.dim, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.52)
 				y += 0.03
 			"reset":
 				var w := p.button(Lang.t("confirm_reset") if _reset_armed else Lang.t("reset_progress"), Vector2(cx, y), Vector2(0.36, 0.062), _reset, "normal", "retry", 42)
@@ -395,7 +435,7 @@ func _settings(tab: String) -> void:
 		y -= 0.085 if rows.size() <= 6 else 0.068
 	var back_to := str(args.get("back", "main"))
 	p.button(Lang.t("back"), Vector2(p.sx(-0.4), -0.325), Vector2(0.18, 0.06), func(): open(back_to, {}, true), "ghost", "back", 44)
-	p.label("SAQR v1.0 · ABODEN GAMES", Vector2(p.sx(0.3), -0.325), 32, Color(Panel3D.DIM, 0.6))
+	p.label("SAQR · ABODEN GAMES", Vector2(p.sx(0.3), -0.325), 32, p.fade(p.dim, 0.6))
 
 
 func _set_opt(key: String, v) -> void:
@@ -428,15 +468,15 @@ func _controls() -> void:
 	var cols := [[Lang.t("c_left"), stick_col if left_hand else throttle_col], [Lang.t("c_right"), throttle_col if left_hand else stick_col]]
 	for ci in range(2):
 		var x := -0.24 if ci == 0 else 0.24      # physical left/right, never mirrored
-		Panel3D.shape(p, Panel3D.rrect(0.44, 0.39, 0.02), Vector3(x, 0.02, 0.0), Color(0.11, 0.14, 0.2), 0.002)
-		p.icon("stick", Vector2(x, 0.185), 0.045, Panel3D.GOLD)
-		p.label(cols[ci][0], Vector2(x, 0.14), 50, Panel3D.GOLD, "bold")
+		Panel3D.shape(p, Panel3D.rrect(0.44, 0.39, 0.02), Vector3(x, 0.02, 0.0), p.inset, 0.002)
+		p.icon("stick", Vector2(x, 0.185), 0.045, p.accent)
+		p.label(cols[ci][0], Vector2(x, 0.14), 50, p.accent, "bold")
 		var y := 0.09
 		for line in cols[ci][1]:
-			p.label(line, Vector2(x, y), 38, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.42)
+			p.label(line, Vector2(x, y), 38, p.ink, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.42)
 			y -= 0.04
-	p.label(Lang.t("c_takeoff"), Vector2(0, -0.205), 36, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.84)
-	p.label(Lang.t("c_land"), Vector2(0, -0.25), 36, Panel3D.DIM, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.84)
+	p.label(Lang.t("c_takeoff"), Vector2(0, -0.205), 36, p.ink, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.84)
+	p.label(Lang.t("c_land"), Vector2(0, -0.25), 36, p.dim, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.84)
 	if args.has("then"):
 		var i := int(args.then)
 		p.button(Lang.t("start"), Vector2(0, -0.305), Vector2(0.3, 0.065), func(): close(); battle.start_mission(i), "primary", "play", 54)
@@ -460,11 +500,11 @@ func _debrief(r: Dictionary) -> void:
 	var m := Missions.get_m(i)
 	var p := _new(0.82, 0.7, "", Color(0.2, 0.5, 0.3))
 	var last := i >= Missions.LIST.size() - 1
-	p.label(Lang.t("mission_complete"), Vector2(0, 0.27), 120, Panel3D.GOLD, "title")
-	p.label("%s %d · %s" % [Lang.t("mission"), i + 1, Missions.text(m, "title")], Vector2(0, 0.19), 46, Panel3D.DIM)
+	p.label(Lang.t("mission_complete"), Vector2(0, 0.27), 120, p.accent, "title")
+	p.label("%s %d · %s" % [Lang.t("mission"), i + 1, Missions.text(m, "title")], Vector2(0, 0.19), 46, p.dim)
 	var n := int(r.get("stars", 1))
 	for k in range(3):
-		var st := p.icon("star", Vector2((k - 1) * 0.11, 0.1), 0.09, Panel3D.GOLD if k < n else Color(0.3, 0.33, 0.38))
+		var st := p.icon("star", Vector2((k - 1) * 0.11, 0.1), 0.09, p.pal.star if k < n else p.fade(p.dim, 0.4))
 		if k < n:
 			st.scale = Vector3.ONE * 0.01
 			_pops.append({"node": st, "at": 0.35 + k * 0.35, "done": false})
@@ -482,12 +522,12 @@ func _debrief(r: Dictionary) -> void:
 		var row := k / 2
 		var x := p.sx(-0.19 if col == 0 else 0.19)
 		var y := 0.0 - row * 0.06
-		p.label(stats[k][0], Vector2(x + p.sx(-0.06), y), 42, Panel3D.DIM, "body", HORIZONTAL_ALIGNMENT_CENTER)
-		p.label(stats[k][1], Vector2(x + p.sx(0.08), y), 48, Panel3D.GOLD if k == 5 else Panel3D.TEXT, "bold", HORIZONTAL_ALIGNMENT_CENTER)
+		p.label(stats[k][0], Vector2(x + p.sx(-0.06), y), 42, p.dim, "body", HORIZONTAL_ALIGNMENT_CENTER)
+		p.label(stats[k][1], Vector2(x + p.sx(0.08), y), 48, p.accent if k == 5 else p.ink, "bold", HORIZONTAL_ALIGNMENT_CENTER)
 	if r.get("record", false):
-		p.label(Lang.t("new_record"), Vector2(0, -0.175), 50, Color(1.0, 0.55, 0.2), "bold")
+		p.label(Lang.t("new_record"), Vector2(0, -0.175), 50, p.accent, "bold")
 	if last:
-		p.label(Lang.t("campaign_done"), Vector2(0, -0.175 - (0.0 if not r.get("record", false) else 0.045)), 44, Panel3D.GOLD, "bold")
+		p.label(Lang.t("campaign_done"), Vector2(0, -0.175 - (0.0 if not r.get("record", false) else 0.045)), 44, p.accent, "bold")
 	var y2 := -0.275
 	var bs := Vector2(0.18, 0.065)
 	if not last:
@@ -501,17 +541,17 @@ func _failed(r: Dictionary) -> void:
 	var i := int(r.get("index", 0))
 	var crashed := str(r.get("reason", "")) == "plane_lost"
 	var p := _new(0.72, 0.5, "", Color(0.45, 0.1, 0.08))
-	p.label(Lang.t("plane_lost") if crashed else Lang.t("mission_failed"), Vector2(0, 0.16), 110, Color(1.0, 0.42, 0.3), "title")
+	p.label(Lang.t("plane_lost") if crashed else Lang.t("mission_failed"), Vector2(0, 0.16), 110, Panel3D.HEADER, "title")
 	var why := Lang.t("pilot_safe") if crashed else str(r.get("why", ""))
-	p.label(why, Vector2(0, 0.07), 46, Panel3D.TEXT, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.64)
-	p.label("%s %d · %s" % [Lang.t("mission"), i + 1, Missions.text(Missions.get_m(i), "title")], Vector2(0, 0.0), 40, Panel3D.DIM)
+	p.label(why, Vector2(0, 0.07), 46, p.ink, "body", HORIZONTAL_ALIGNMENT_CENTER, 0.64)
+	p.label("%s %d · %s" % [Lang.t("mission"), i + 1, Missions.text(Missions.get_m(i), "title")], Vector2(0, 0.0), 40, p.dim)
 	var y := -0.12
 	p.button(Lang.t("retry"), Vector2(p.sx(-0.2), y), Vector2(0.24, 0.072), func(): close(); battle.start_mission(i), "primary", "retry", 40)
-	p.label(Lang.t("continue_from") % (i + 1), Vector2(p.sx(-0.2), y - 0.055), 34, Panel3D.DIM)
+	p.label(Lang.t("continue_from") % (i + 1), Vector2(p.sx(-0.2), y - 0.055), 34, p.dim)
 	p.button(Lang.t("hangar"), Vector2(p.sx(0.06), y), Vector2(0.18, 0.065), func(): open("hangar", {"back": "brief", "index": i}), "normal", "plane", 42)
 	p.button(Lang.t("menu"), Vector2(p.sx(0.24), y), Vector2(0.14, 0.065), func(): battle.quit_to_menu(), "ghost", "home", 42)
 	if str(Profile.get_s("difficulty")) != "easy":
-		p.label(Lang.t("diff_easy_d") + " — " + Lang.t("easy"), Vector2(0, -0.2), 34, Color(Panel3D.DIM, 0.8))
+		p.label(Lang.t("diff_easy_d") + " — " + Lang.t("easy"), Vector2(0, -0.2), 34, Color(p.dim, 0.8))
 
 
 func _tick_pops(delta: float) -> void:

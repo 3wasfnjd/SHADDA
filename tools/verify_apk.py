@@ -1,5 +1,5 @@
 import hashlib,json,os,pathlib,re,subprocess,zipfile,xml.etree.ElementTree as ET
-p=pathlib.Path('build/SAQR-Quest-v1.2.0.apk')
+p=pathlib.Path('build/SAQR-Quest-v1.3.0.apk')
 sdk=pathlib.Path(os.environ['ANDROID_HOME'])
 analyzer=sdk/'cmdline-tools/latest/bin/apkanalyzer'
 xml=subprocess.check_output([str(analyzer),'manifest','print',str(p)],text=True)

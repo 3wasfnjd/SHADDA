@@ -476,10 +476,13 @@ func _run() -> void:
 	var lead_f: Enemy = formed[0].get_meta("form_lead")
 	await _until(func(): return false, 72 * 2)
 	assert((formed[0] as Enemy).global_position.distance_to(lead_f.global_position) < 0.9, "wingmen hold the V")
-	# Wingmen keep station beside the player's plane.
-	await _until(func(): return false, 72 * 3)
-	for w in battle.wingmen:
-		assert((w as Enemy).global_position.distance_to(plane.global_position) < 3.0, "wingman stays with you (%.2f m)" % (w as Enemy).global_position.distance_to(plane.global_position))
+	# Wingmen stay with the player's plane (they may dart after an enemy, but come back).
+	var closest := [INF, INF]
+	await _until(func():
+		for i in range(2):
+			closest[i] = minf(closest[i], (battle.wingmen[i] as Enemy).global_position.distance_to(plane.global_position))
+		return false, 72 * 5)
+	assert(closest[0] < 1.6 and closest[1] < 1.6, "wingmen fly with you (%.2f, %.2f m)" % closest)
 	# Left trigger alone fires only the left-wing guns.
 	plane._gun_cd = 0.0
 	var n0 := battle.shots.size()

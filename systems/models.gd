@@ -491,7 +491,7 @@ static func player_plane(outline: float = 0.0018) -> Dictionary:
 	var tips: Array = [pivot(root, "WingTip", Vector3(0.165, -0.02, 0.0)), pivot(root, "WingTip", Vector3(-0.165, -0.02, 0.0))]
 	# Navigation lights: green right tip, red left tip, white tail.
 	var lights: Array = []
-	for spec in [[Vector3(0.168, -0.016, 0.005), Color(0.3, 1.0, 0.4)], [Vector3(-0.168, -0.016, 0.005), Color(1.0, 0.25, 0.2)], [Vector3(0.0, 0.05, 0.152), Color(1.0, 1.0, 0.92)]]:
+	for spec in [[Vector3(0.158, -0.005, -0.026), Color(0.3, 1.0, 0.4)], [Vector3(-0.158, -0.005, -0.026), Color(1.0, 0.25, 0.2)], [Vector3(0.0, 0.05, 0.152), Color(1.0, 1.0, 0.92)]]:
 		var l := Toon.add(root, Toon.ball(0.0042, 8, 5), Toon.flat(spec[1]), spec[0])
 		lights.append(l)
 	# Exhaust flames (shown with throttle and boost).
